@@ -11,6 +11,7 @@ class LlamaManager {
         this.lastError = null;
         this.healthData = null;
         this.slotsData = null;
+        this.metricsData = null;
         this._healthInterval = null;
         this._currentConfig = null;
     }
@@ -23,7 +24,7 @@ class LlamaManager {
         }
         if (cfg.host && cfg.host !== '127.0.0.1') { args.push('--host', cfg.host); }
         if (cfg.port && cfg.port !== 8080) { args.push('--port', String(cfg.port)); }
-        if (cfg.ctxSize && cfg.ctxSize !== 4096) { args.push('-c', String(cfg.ctxSize)); }
+        if (cfg.ctxSize) { args.push('-c', String(cfg.ctxSize)); }
         if (cfg.threads && cfg.threads !== -1) { args.push('-t', String(cfg.threads)); }
         if (cfg.threadsBatch && cfg.threadsBatch !== -1) { args.push('-tb', String(cfg.threadsBatch)); }
 
@@ -113,14 +114,17 @@ class LlamaManager {
             const lines = data.toString().split('\n').filter(l => l.trim());
             for (const line of lines) {
                 this.logs.push(line);
-                // Detect when server is ready
+                // Detect when server is ready (legacy fallback)
                 if (line.includes('server is listening on')) {
-                    this.status = 'running';
-                    this.logs.push('[Manager] Server is ready!');
-                    this._startHealthPolling(cfg);
+                    if (this.status === 'starting') {
+                        this.status = 'running';
+                        this.logs.push('[Manager] Server is ready (detected via logs)');
+                    }
                 }
             }
         });
+
+        this._startHealthPolling(cfg);
 
         this.process.on('error', (err) => {
             this.status = 'error';
@@ -206,21 +210,48 @@ class LlamaManager {
                 const healthRes = await fetch(`${baseUrl}/health`);
                 if (healthRes.ok) {
                     this.healthData = await healthRes.json();
+                    if (this.status === 'starting') {
+                        this.status = 'running';
+                        this.logs.push('[Manager] Server is ready (verified via health check)');
+                    }
                 }
 
-                // Fetch slots if the server is ok, regardless of if we started with -m or --model-dir
                 if (this.healthData && (this.healthData.status === 'ok' || this.healthData.status === 'ready')) {
+                    // Fetch slots
                     const slotsRes = await fetch(`${baseUrl}/slots`);
                     if (slotsRes.ok) {
                         this.slotsData = await slotsRes.json();
                     }
+
+                    // Fetch and parse metrics
+                    const metricsRes = await fetch(`${baseUrl}/metrics`);
+                    if (metricsRes.ok) {
+                        const rawMetrics = await metricsRes.text();
+                        this.metricsData = this._parseMetrics(rawMetrics);
+                    }
                 } else {
                     this.slotsData = null;
+                    this.metricsData = null;
                 }
             } catch (_) {
                 // Ignore fetch errors during polling
             }
         }, 2000);
+    }
+
+    _parseMetrics(raw) {
+        const metrics = {};
+        const lines = raw.split('\n');
+        for (const line of lines) {
+            if (line.startsWith('#') || !line.trim()) continue;
+            const parts = line.split(' ');
+            if (parts.length >= 2) {
+                const key = parts[0].replace('llamacpp:', '');
+                const value = parseFloat(parts[1]);
+                metrics[key] = value;
+            }
+        }
+        return metrics;
     }
 
     _stopHealthPolling() {
@@ -243,6 +274,7 @@ class LlamaManager {
             lastError: this.lastError,
             health: this.healthData,
             slots: this.slotsData,
+            metrics: this.metricsData,
             pid: this.process?.pid || null,
             config: this._currentConfig,
         };

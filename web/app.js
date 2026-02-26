@@ -110,7 +110,7 @@ function updateDashboard(data) {
     // Slots
     const slotsVal = document.getElementById('stat-slots-value');
     if (data.slots && Array.isArray(data.slots)) {
-        const active = data.slots.filter(s => s.is_processing).length;
+        const active = data.slots.filter(s => s.is_processing || (s.id_task !== undefined && s.id_task !== -1)).length;
         slotsVal.textContent = `${active} / ${data.slots.length}`;
         updateSlotsDetail(data.slots);
     } else {
@@ -121,20 +121,42 @@ function updateDashboard(data) {
     // Context
     const ctxVal = document.getElementById('stat-ctx-value');
     if (data.slots && data.slots.length > 0) {
-        const totalCtx = data.slots.reduce((acc, s) => acc + (s.n_ctx || 0), 0);
-        const usedCtx = data.slots.reduce((acc, s) => acc + (s.n_prompt_tokens_processed || 0), 0);
-        if (totalCtx > 0) {
-            const pct = Math.round((usedCtx / totalCtx) * 100);
-            ctxVal.textContent = `${usedCtx.toLocaleString()} / ${totalCtx.toLocaleString()}`;
+        // Use the context size of a single slot as the official 'Model Context' limit
+        const baseCtx = data.slots[0].n_ctx || 0;
+
+        // Track the highest usage among any slot to represent current context pressure
+        const usedCtx = data.slots.reduce((max, s) => {
+            let used = 0;
+            if (s.n_decoded !== undefined) used = s.n_decoded;
+            else if (s.next_token && s.next_token[0] && s.next_token[0].n_decoded !== undefined) {
+                used = s.next_token[0].n_decoded;
+            } else {
+                used = (s.n_prompt_tokens_processed || 0) + (s.n_tokens_predicted || 0);
+            }
+            return Math.max(max, used);
+        }, 0);
+
+        if (baseCtx > 0) {
+            ctxVal.textContent = `${usedCtx.toLocaleString()} / ${baseCtx.toLocaleString()}`;
         } else {
-            ctxVal.textContent = `${totalCtx.toLocaleString()} tokens`;
+            ctxVal.textContent = `${usedCtx.toLocaleString()} tokens`;
         }
     } else {
         ctxVal.textContent = '—';
     }
 
+    // Speed / Throughput
+    const speedVal = document.getElementById('stat-speed-value');
+    if (data.metrics && data.metrics.predicted_tokens_seconds !== undefined && data.metrics.predicted_tokens_seconds > 0) {
+        speedVal.textContent = `${data.metrics.predicted_tokens_seconds.toFixed(2)} t/s`;
+    } else if (data.health && data.health.tokens_per_second !== undefined && data.health.tokens_per_second > 0) {
+        speedVal.textContent = `${data.health.tokens_per_second.toFixed(2)} t/s`;
+    } else {
+        speedVal.textContent = '—';
+    }
+
     // Health detail
-    updateHealthDetail(data.health);
+    updateHealthDetail(data.health, data.metrics);
 
     // Current model
     updateCurrentModel(data.config);
@@ -148,45 +170,71 @@ function updateSlotsDetail(slots) {
     }
 
     container.innerHTML = slots.map((slot, i) => {
-        const isActive = slot.is_processing;
+        const isActive = slot.is_processing || (slot.id_task !== undefined && slot.id_task !== -1);
         const badgeClass = isActive ? 'active' : 'idle';
         const badgeText = isActive ? 'ACTIVE' : 'IDLE';
-        const prompt = slot.n_prompt_tokens_processed || 0;
-        const generated = slot.n_tokens_predicted || 0;
+
+        // Use n_decoded from official API if available
+        let decoded = 0;
+        if (slot.n_decoded !== undefined) decoded = slot.n_decoded;
+        else if (slot.next_token && slot.next_token[0] && slot.next_token[0].n_decoded !== undefined) {
+            decoded = slot.next_token[0].n_decoded;
+        } else {
+            decoded = (slot.n_prompt_tokens_processed || 0) + (slot.n_tokens_predicted || 0);
+        }
 
         return `
       <div class="slot-item">
         <span class="slot-badge ${badgeClass}">${badgeText}</span>
-        <span class="slot-ctx">Slot ${slot.id ?? i} — ${prompt} prompt / ${generated} generated</span>
+        <span class="slot-ctx">Slot ${slot.id ?? i} — ${decoded.toLocaleString()} tokens decoded</span>
         <span class="slot-ctx">${isActive ? '⚡' : '💤'}</span>
       </div>
     `;
     }).join('');
 }
 
-function updateHealthDetail(health) {
+function shortenPath(p) {
+    if (!p) return '';
+    const parts = p.split(/[\\/]/);
+    if (parts.length > 2) {
+        return '...' + parts.slice(-2).join('\\');
+    }
+    return p;
+}
+
+function updateHealthDetail(health, metrics) {
     const container = document.getElementById('health-detail');
-    if (!health) {
+    if (!health && !metrics) {
         container.innerHTML = '<div class="empty-state">Server not running</div>';
         return;
     }
 
     const items = [];
-    if (health.status) items.push(['Status', health.status]);
-    if (health.slots_idle !== undefined) items.push(['Idle Slots', health.slots_idle]);
-    if (health.slots_processing !== undefined) items.push(['Processing Slots', health.slots_processing]);
-    if (health.model) items.push(['Model', shortenPath(health.model)]);
+    if (health?.status) items.push(['Status', health.status]);
+    if (health?.slots_idle !== undefined) items.push(['Idle Slots', health.slots_idle]);
 
-    // Tokens per second from health data
-    if (health.tokens_per_second !== undefined) {
-        items.push(['Tokens/sec', health.tokens_per_second.toFixed(2)]);
+    // Use Metrics for high-fidelity throughput if available
+    if (metrics) {
+        if (metrics.prompt_tokens_seconds !== undefined) {
+            items.push(['Prompt Speed', `${metrics.prompt_tokens_seconds.toFixed(2)} t/s`]);
+        }
+        if (metrics.predicted_tokens_seconds !== undefined) {
+            items.push(['Gen Speed', `${metrics.predicted_tokens_seconds.toFixed(2)} t/s`]);
+        }
+        if (metrics.prompt_tokens_total !== undefined) {
+            items.push(['Total Prompt', metrics.prompt_tokens_total.toLocaleString()]);
+        }
+        if (metrics.tokens_predicted_total !== undefined) {
+            items.push(['Total Gen', metrics.tokens_predicted_total.toLocaleString()]);
+        }
+    } else if (health) {
+        // Fallback to basic health speed
+        if (health.tokens_per_second !== undefined) {
+            items.push(['Tokens/sec', health.tokens_per_second.toFixed(2)]);
+        }
     }
-    if (health.tokens_predicted !== undefined) {
-        items.push(['Total Generated', health.tokens_predicted.toLocaleString()]);
-    }
-    if (health.tokens_evaluated !== undefined) {
-        items.push(['Total Evaluated', health.tokens_evaluated.toLocaleString()]);
-    }
+
+    if (health?.model) items.push(['Model', shortenPath(health.model)]);
 
     if (items.length === 0) {
         container.innerHTML = '<div class="empty-state">No health data</div>';
