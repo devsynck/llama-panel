@@ -1,0 +1,31 @@
+{
+  "name": "llama-panel",
+  "version": "1.0.0",
+  "description": "Llama Server Management Tool - Web UI for managing llama-server",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "build": "node build.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.3",
+    "postject": "^1.0.0-alpha.6"
+  },
+  "pkg": {
+    "scripts": [
+      "src/**/*.js"
+    ],
+    "assets": [
+      "web/**/*"
+    ],
+    "targets": [
+      "node20-win-x64"
+    ],
+    "outputPath": "dist"
+  },
+  "bin": "server.js"
+}

@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Llama Panel — Server Manager</title>
+  <meta name="description"
+    content="Web-based management tool for llama-server. Configure, monitor, and control your LLM inference server.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+  <div id="app">
+    <!-- Sidebar -->
+    <nav id="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-icon">🦙</div>
+        <span class="brand-text">Llama Panel</span>
+      </div>
+      <ul class="nav-links">
+        <li><a href="#" class="nav-link active" data-page="dashboard" id="nav-dashboard">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7" rx="1" />
+              <rect x="14" y="3" width="7" height="7" rx="1" />
+              <rect x="3" y="14" width="7" height="7" rx="1" />
+              <rect x="14" y="14" width="7" height="7" rx="1" />
+            </svg>
+            Dashboard
+          </a></li>
+        <li><a href="#" class="nav-link" data-page="config" id="nav-config">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3" />
+              <path
+                d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+            Configuration
+          </a></li>
+        <li><a href="#" class="nav-link" data-page="models" id="nav-models">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path
+                d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+              <line x1="12" y1="22.08" x2="12" y2="12" />
+            </svg>
+            Models
+          </a></li>
+        <li><a href="#" class="nav-link" data-page="download" id="nav-download">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            Download
+          </a></li>
+        <li><a href="#" class="nav-link" data-page="logs" id="nav-logs">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="16" y1="13" x2="8" y2="13" />
+              <line x1="16" y1="17" x2="8" y2="17" />
+              <polyline points="10 9 9 9 8 9" />
+            </svg>
+            Server Logs
+          </a></li>
+      </ul>
+      <div class="sidebar-footer">
+        <div class="server-indicator" id="server-indicator">
+          <span class="indicator-dot"></span>
+          <span class="indicator-text">Offline</span>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main id="main-content">
+      <!-- Dashboard Page -->
+      <section id="page-dashboard" class="page active">
+        <div class="page-header">
+          <h1>Dashboard</h1>
+          <div class="server-controls">
+            <button id="btn-start" class="btn btn-success" onclick="startServer()">
+              <svg viewBox="0 0 24 24" fill="currentColor" stroke="none" width="16" height="16">
+                <polygon points="5 3 19 12 5 21 5 3" />
+              </svg>
+              Start Server
+            </button>
+            <button id="btn-stop" class="btn btn-danger" onclick="stopServer()" disabled>
+              <svg viewBox="0 0 24 24" fill="currentColor" stroke="none" width="16" height="16">
+                <rect x="6" y="6" width="12" height="12" rx="1" />
+              </svg>
+              Stop Server
+            </button>
+          </div>
+        </div>
+
+        <!-- Stats Grid -->
+        <div class="stats-grid">
+          <div class="stat-card" id="stat-status">
+            <div class="stat-icon status-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+              </svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-label">Status</span>
+              <span class="stat-value" id="stat-status-value">Offline</span>
+            </div>
+          </div>
+          <div class="stat-card" id="stat-uptime">
+            <div class="stat-icon uptime-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+              </svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-label">Uptime</span>
+              <span class="stat-value" id="stat-uptime-value">—</span>
+            </div>
+          </div>
+          <div class="stat-card" id="stat-slots">
+            <div class="stat-icon slots-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-label">Active Slots</span>
+              <span class="stat-value" id="stat-slots-value">—</span>
+            </div>
+          </div>
+          <div class="stat-card" id="stat-ctx">
+            <div class="stat-icon ctx-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                <line x1="8" y1="21" x2="16" y2="21" />
+                <line x1="12" y1="17" x2="12" y2="21" />
+              </svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-label">Context Usage</span>
+              <span class="stat-value" id="stat-ctx-value">—</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Detailed Stats -->
+        <div class="detail-grid">
+          <div class="detail-card">
+            <h3>Slot Details</h3>
+            <div id="slots-detail" class="slots-detail">
+              <div class="empty-state">No active slots</div>
+            </div>
+          </div>
+          <div class="detail-card">
+            <h3>Server Health</h3>
+            <div id="health-detail" class="health-detail">
+              <div class="empty-state">Server not running</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Current Model -->
+        <div class="detail-card model-info-card">
+          <h3>Current Model</h3>
+          <div id="current-model-info" class="current-model-info">
+            <div class="empty-state">No model loaded</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Configuration Page -->
+      <section id="page-config" class="page">
+        <div class="page-header">
+          <h1>Configuration</h1>
+          <button class="btn btn-primary" onclick="saveConfig()" id="btn-save-config">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+              <polyline points="17 21 17 13 7 13 7 21" />
+              <polyline points="7 3 7 8 15 8" />
+            </svg>
+            Save Configuration
+          </button>
+        </div>
+
+        <div class="config-sections">
+          <!-- Network -->
+          <div class="config-section">
+            <h3>🌐 Network</h3>
+            <div class="config-grid">
+              <div class="form-group">
+                <label for="cfg-host">Host</label>
+                <input type="text" id="cfg-host" placeholder="127.0.0.1">
+              </div>
+              <div class="form-group">
+                <label for="cfg-port">Port</label>
+                <input type="number" id="cfg-port" placeholder="8080">
+              </div>
+              <div class="form-group">
+                <label for="cfg-apiKey">API Key</label>
+                <input type="text" id="cfg-apiKey" placeholder="Optional API key">
+              </div>
+              <div class="form-group">
+                <label for="cfg-managerPort">Manager Port</label>
+                <input type="number" id="cfg-managerPort" placeholder="7654">
+                <small>Port for this management UI (requires restart)</small>
+              </div>
+            </div>
+          </div>
+
+          <!-- Model -->
+          <div class="config-section">
+            <h3>🧠 Model</h3>
+            <div class="config-grid">
+              <div class="form-group full-width">
+                <label for="cfg-modelsDir">Models Directory</label>
+                <div class="input-with-btn">
+                  <input type="text" id="cfg-modelsDir" placeholder="Path to folder containing .gguf models">
+                  <button class="btn btn-sm btn-secondary" onclick="browseDirectory()" title="Browse for folder">📁
+                    Browse</button>
+                  <button class="btn btn-sm btn-secondary" onclick="refreshModelSelect()"
+                    title="Scan directory for models">🔄 Scan</button>
+                </div>
+                <small>Set the folder where your .gguf model files are stored</small>
+              </div>
+              <div class="form-group full-width">
+                <label for="cfg-modelPath">Active Model</label>
+                <select id="cfg-modelPath">
+                  <option value="">— Set models directory and click Scan —</option>
+                </select>
+                <small>Select a model from your models directory to use with llama-server</small>
+              </div>
+              <div class="form-group">
+                <label for="cfg-gpuLayers">GPU Layers</label>
+                <input type="text" id="cfg-gpuLayers" placeholder="auto">
+                <small>Number, 'auto', or 'all'</small>
+              </div>
+              <div class="form-group">
+                <label for="cfg-splitMode">Split Mode</label>
+                <select id="cfg-splitMode">
+                  <option value="layer">Layer</option>
+                  <option value="row">Row</option>
+                  <option value="none">None</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Context & Batching -->
+          <div class="config-section">
+            <h3>📐 Context & Batching</h3>
+            <div class="config-grid">
+              <div class="form-group">
+                <label for="cfg-ctxSize">Context Size</label>
+                <input type="number" id="cfg-ctxSize" placeholder="4096">
+              </div>
+              <div class="form-group">
+                <label for="cfg-batchSize">Batch Size</label>
+                <input type="number" id="cfg-batchSize" placeholder="2048">
+              </div>
+              <div class="form-group">
+                <label for="cfg-ubatchSize">Micro Batch Size</label>
+                <input type="number" id="cfg-ubatchSize" placeholder="512">
+              </div>
+              <div class="form-group">
+                <label for="cfg-parallel">Parallel Slots</label>
+                <input type="number" id="cfg-parallel" placeholder="1">
+              </div>
+            </div>
+          </div>
+
+          <!-- Performance -->
+          <div class="config-section">
+            <h3>⚡ Performance</h3>
+            <div class="config-grid">
+              <div class="form-group">
+                <label for="cfg-threads">Threads</label>
+                <input type="number" id="cfg-threads" placeholder="-1 (auto)">
+              </div>
+              <div class="form-group">
+                <label for="cfg-threadsBatch">Threads Batch</label>
+                <input type="number" id="cfg-threadsBatch" placeholder="-1 (auto)">
+              </div>
+              <div class="form-group">
+                <label for="cfg-flashAttn">Flash Attention</label>
+                <select id="cfg-flashAttn">
+                  <option value="auto">Auto</option>
+                  <option value="on">On</option>
+                  <option value="off">Off</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="cfg-cacheTypeK">KV Cache Type K</label>
+                <select id="cfg-cacheTypeK">
+                  <option value="f16">f16</option>
+                  <option value="f32">f32</option>
+                  <option value="bf16">bf16</option>
+                  <option value="q8_0">q8_0</option>
+                  <option value="q4_0">q4_0</option>
+                  <option value="q4_1">q4_1</option>
+                  <option value="q5_0">q5_0</option>
+                  <option value="q5_1">q5_1</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="cfg-cacheTypeV">KV Cache Type V</label>
+                <select id="cfg-cacheTypeV">
+                  <option value="f16">f16</option>
+                  <option value="f32">f32</option>
+                  <option value="bf16">bf16</option>
+                  <option value="q8_0">q8_0</option>
+                  <option value="q4_0">q4_0</option>
+                  <option value="q4_1">q4_1</option>
+                  <option value="q5_0">q5_0</option>
+                  <option value="q5_1">q5_1</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Toggles -->
+          <div class="config-section">
+            <h3>🔧 Options</h3>
+            <div class="config-grid toggles-grid">
+              <div class="toggle-group">
+                <label class="toggle">
+                  <input type="checkbox" id="cfg-contBatching">
+                  <span class="toggle-slider"></span>
+                </label>
+                <span>Continuous Batching</span>
+              </div>
+              <div class="toggle-group">
+                <label class="toggle">
+                  <input type="checkbox" id="cfg-mlock">
+                  <span class="toggle-slider"></span>
+                </label>
+                <span>Memory Lock (mlock)</span>
+              </div>
+              <div class="toggle-group">
+                <label class="toggle">
+                  <input type="checkbox" id="cfg-mmap">
+                  <span class="toggle-slider"></span>
+                </label>
+                <span>Memory Map (mmap)</span>
+              </div>
+              <div class="toggle-group">
+                <label class="toggle">
+                  <input type="checkbox" id="cfg-cachePrompt">
+                  <span class="toggle-slider"></span>
+                </label>
+                <span>Prompt Caching</span>
+              </div>
+              <div class="toggle-group">
+                <label class="toggle">
+                  <input type="checkbox" id="cfg-metrics">
+                  <span class="toggle-slider"></span>
+                </label>
+                <span>Enable Metrics</span>
+              </div>
+              <div class="toggle-group">
+                <label class="toggle">
+                  <input type="checkbox" id="cfg-slots">
+                  <span class="toggle-slider"></span>
+                </label>
+                <span>Enable Slots Endpoint</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Extra Args -->
+          <div class="config-section">
+            <h3>🔑 Extra Arguments</h3>
+            <div class="form-group full-width">
+              <label for="cfg-extraArgs">Additional CLI arguments</label>
+              <input type="text" id="cfg-extraArgs" placeholder="e.g. --rope-scaling yarn --rope-freq-base 10000">
+              <small>Any additional flags to pass to llama-server</small>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- Models Page -->
+      <section id="page-models" class="page">
+        <div class="page-header">
+          <h1>Local Models</h1>
+          <button class="btn btn-secondary" onclick="refreshModels()" id="btn-refresh-models">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+              <polyline points="23 4 23 10 17 10" />
+              <polyline points="1 20 1 14 7 14" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+            Refresh
+          </button>
+        </div>
+        <div id="models-list" class="models-list">
+          <div class="empty-state">Loading models...</div>
+        </div>
+      </section>
+
+      <!-- Download Page -->
+      <section id="page-download" class="page">
+        <div class="page-header">
+          <h1>Download Models</h1>
+        </div>
+
+        <!-- Search -->
+        <div class="search-section">
+          <div class="search-bar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input type="text" id="hf-search" placeholder="Search HuggingFace for GGUF models..."
+              onkeypress="if(event.key==='Enter')searchModels()">
+            <button class="btn btn-primary" onclick="searchModels()" id="btn-search">Search</button>
+          </div>
+        </div>
+
+        <!-- Search Results -->
+        <div id="search-results" class="search-results"></div>
+
+        <!-- Repo Files Modal -->
+        <div id="repo-modal" class="modal" style="display:none">
+          <div class="modal-backdrop" onclick="closeRepoModal()"></div>
+          <div class="modal-content">
+            <div class="modal-header">
+              <h3 id="repo-modal-title">Repository Files</h3>
+              <button class="btn-close" onclick="closeRepoModal()">&times;</button>
+            </div>
+            <div id="repo-files-list" class="repo-files-list">
+              <div class="empty-state">Loading files...</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Active Downloads -->
+        <div class="downloads-section">
+          <h3>Active Downloads</h3>
+          <div id="downloads-list" class="downloads-list">
+            <div class="empty-state">No active downloads</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Logs Page -->
+      <section id="page-logs" class="page">
+        <div class="page-header">
+          <h1>Server Logs</h1>
+          <div class="log-controls">
+            <label class="toggle-inline">
+              <input type="checkbox" id="log-autoscroll" checked>
+              Auto-scroll
+            </label>
+            <button class="btn btn-sm btn-secondary" onclick="clearLogView()" id="btn-clear-logs">Clear View</button>
+          </div>
+        </div>
+        <div id="log-container" class="log-container">
+          <div class="empty-state">No logs yet. Start the server to see logs.</div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Toast container -->
+  <div id="toast-container"></div>
+
+  <script src="app.js"></script>
+</body>
+
+</html>
