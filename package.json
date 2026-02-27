@@ -1,6 +1,6 @@
 {
   "name": "llama-panel",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Llama Server Management Tool - Web UI for managing llama-server",
   "license": "MIT",
   "main": "server.js",
