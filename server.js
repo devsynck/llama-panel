@@ -5,6 +5,7 @@ const http = require('http');
 const config = require('./src/config');
 const LlamaManager = require('./src/llama-manager');
 const ModelManager = require('./src/model-manager');
+const sysStats = require('./src/sys-stats');
 
 const app = express();
 const server = http.createServer(app);
@@ -39,7 +40,7 @@ if (typeof globalThis.__EMBEDDED_WEB__ !== 'undefined') {
 
 // --- Status ---
 app.get('/api/status', (req, res) => {
-    res.json(llama.getStatus());
+    res.json({ ...llama.getStatus(), sysInfo: sysStats.get() });
 });
 
 // --- Config ---
@@ -217,7 +218,7 @@ wss.on('connection', (ws) => {
         if (ws.readyState === 1) {
             ws.send(JSON.stringify({
                 type: 'status',
-                data: llama.getStatus(),
+                data: { ...llama.getStatus(), sysInfo: sysStats.get() },
             }));
             // Also send download progress
             const downloads = models.getAllDownloads();

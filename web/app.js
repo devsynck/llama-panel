@@ -155,6 +155,40 @@ function updateDashboard(data) {
         speedVal.textContent = '—';
     }
 
+    // Sys Info
+    const ramUsedVal = document.getElementById('stat-ram-used');
+    const ramTotalVal = document.getElementById('stat-ram-total');
+    if (ramUsedVal && ramTotalVal && data.sysInfo && data.sysInfo.ram) {
+        ramUsedVal.textContent = formatSize(data.sysInfo.ram.used);
+        ramTotalVal.textContent = `/ ${formatSize(data.sysInfo.ram.total)}`;
+    } else if (ramUsedVal && ramTotalVal) {
+        ramUsedVal.textContent = '—';
+        ramTotalVal.textContent = '—';
+    }
+
+    const gpuVal = document.getElementById('stat-gpu-value');
+    const vramUsedVal = document.getElementById('stat-vram-used');
+    const vramTotalVal = document.getElementById('stat-vram-total');
+    const gpuTempVal = document.getElementById('stat-gpu-temp');
+    const gpuPowerVal = document.getElementById('stat-gpu-power');
+
+    if (gpuVal && vramUsedVal && vramTotalVal && data.sysInfo && data.sysInfo.gpu && data.sysInfo.gpu.vramTotal > 0) {
+        gpuVal.textContent = `${data.sysInfo.gpu.utilization.toFixed(1)}%`;
+        vramUsedVal.textContent = formatSize(data.sysInfo.gpu.vramUsed * 1024 * 1024);
+        vramTotalVal.textContent = `/ ${formatSize(data.sysInfo.gpu.vramTotal * 1024 * 1024)}`;
+
+        const coreTempStr = data.sysInfo.gpu.tempCore > 0 ? `${data.sysInfo.gpu.tempCore.toFixed(0)}°C` : '';
+        const memTempStr = data.sysInfo.gpu.tempMem > 0 ? `${data.sysInfo.gpu.tempMem.toFixed(0)}°C (Mem)` : '';
+        if (gpuTempVal) gpuTempVal.textContent = (coreTempStr || memTempStr) ? [coreTempStr, memTempStr].filter(Boolean).join(' | ') : '—';
+        if (gpuPowerVal) gpuPowerVal.textContent = data.sysInfo.gpu.powerDraw > 0 ? `${data.sysInfo.gpu.powerDraw.toFixed(1)} W Draw` : '—';
+    } else if (gpuVal && vramUsedVal && vramTotalVal) {
+        gpuVal.textContent = '—';
+        vramUsedVal.textContent = '—';
+        vramTotalVal.textContent = '—';
+        if (gpuTempVal) gpuTempVal.textContent = '—';
+        if (gpuPowerVal) gpuPowerVal.textContent = '—';
+    }
+
     // Health detail
     updateHealthDetail(data.health, data.metrics);
 

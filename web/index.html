@@ -164,6 +164,82 @@
           </div>
         </div>
 
+        <div class="stats-grid">
+          <div class="stat-card" id="stat-ram">
+            <div class="stat-icon ram-icon" style="background: var(--primary-bg); color: var(--primary);">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="2" y="7" width="20" height="10" rx="2" ry="2" />
+                <line x1="6" y1="7" x2="6" y2="5" />
+                <line x1="10" y1="7" x2="10" y2="5" />
+                <line x1="14" y1="7" x2="14" y2="5" />
+                <line x1="18" y1="7" x2="18" y2="5" />
+                <line x1="6" y1="19" x2="6" y2="17" />
+                <line x1="10" y1="19" x2="10" y2="17" />
+                <line x1="14" y1="19" x2="14" y2="17" />
+                <line x1="18" y1="19" x2="18" y2="17" />
+              </svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-label">System RAM</span>
+              <span class="stat-value" id="stat-ram-used" style="font-size: 1.1rem">—</span>
+              <span class="stat-value" id="stat-ram-total"
+                style="font-size: 0.85rem; color: var(--text-muted); font-weight: 500;">—</span>
+            </div>
+          </div>
+          <div class="stat-card" id="stat-gpu">
+            <div class="stat-icon gpu-icon" style="background: var(--warning-bg); color: var(--warning);">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="4" y="4" width="16" height="16" rx="2" ry="2" />
+                <rect x="9" y="9" width="6" height="6" />
+                <line x1="9" y1="1" x2="9" y2="4" />
+                <line x1="15" y1="1" x2="15" y2="4" />
+                <line x1="9" y1="20" x2="9" y2="23" />
+                <line x1="15" y1="20" x2="15" y2="23" />
+                <line x1="20" y1="9" x2="23" y2="9" />
+                <line x1="20" y1="14" x2="23" y2="14" />
+                <line x1="1" y1="9" x2="4" y2="9" />
+                <line x1="1" y1="14" x2="4" y2="14" />
+              </svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-label">GPU Usage</span>
+              <span class="stat-value" id="stat-gpu-value">—</span>
+            </div>
+          </div>
+          <div class="stat-card" id="stat-vram">
+            <div class="stat-icon vram-icon" style="background: var(--danger-bg); color: var(--danger);">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path
+                  d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                <polyline points="7.5 4.21 12 6.81 16.5 4.21" />
+                <polyline points="7.5 19.79 7.5 14.6 3 12" />
+                <polyline points="21 12 16.5 14.6 16.5 19.79" />
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+                <line x1="12" y1="22.08" x2="12" y2="12" />
+              </svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-label">VRAM Usage</span>
+              <span class="stat-value" id="stat-vram-used" style="font-size: 1.1rem">—</span>
+              <span class="stat-value" id="stat-vram-total"
+                style="font-size: 0.85rem; color: var(--text-muted); font-weight: 500;">—</span>
+            </div>
+          </div>
+          <div class="stat-card" id="stat-gpu-sys">
+            <div class="stat-icon" style="background: rgba(236, 72, 153, 0.12); color: #ec4899;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+              </svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-label">GPU Temps & Power</span>
+              <span class="stat-value" id="stat-gpu-temp" style="font-size: 1.1rem">—</span>
+              <span class="stat-value" id="stat-gpu-power"
+                style="font-size: 0.85rem; color: var(--text-muted); font-weight: 500;">—</span>
+            </div>
+          </div>
+        </div>
+
         <!-- Detailed Stats -->
         <div class="detail-grid">
           <div class="detail-card">
