@@ -4,6 +4,8 @@
 
 Built heavily with aesthetics and simplicity in mind, it gives you full control over running local models.
 
+<img width="2556" height="1305" alt="image" src="https://github.com/user-attachments/assets/4728c648-7054-49e7-b711-c5759460f9c0" />
+
 ## ✨ Features
 
 - **One-Click Server Management**: Start, stop, and restart `llama-server` easily directly from the dashboard.
