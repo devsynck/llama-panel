@@ -49,6 +49,7 @@ fs.readdirSync(webDir).forEach(function (file) {
 
 var bundleSrc = fs.readFileSync(BUNDLE_FILE, 'utf-8');
 var preamble = '// Embedded web assets for standalone exe\n';
+preamble += 'const _origEmit = process.emit; process.emit = function(name, data) { if(name === "warning" && data && data.message && data.message.includes("single-executable applications")) return false; return _origEmit.apply(process, arguments); };\n';
 preamble += 'globalThis.__EMBEDDED_WEB__ = ' + JSON.stringify(webFiles) + ';\n\n';
 var finalBundle = preamble + bundleSrc;
 fs.writeFileSync(BUNDLE_FILE, finalBundle, 'utf-8');
@@ -61,6 +62,7 @@ var seaConfig = {
     output: SEA_BLOB,
     disableExperimentalSEAWarning: true,
     useCodeCache: true,
+    useSnapshot: false,
 };
 fs.writeFileSync(SEA_CONFIG, JSON.stringify(seaConfig, null, 2));
 
