@@ -8,8 +8,9 @@ Built heavily with aesthetics and simplicity in mind, it gives you full control 
 
 ## ✨ Features
 
-- **One-Click Server Management**: Start, stop, and restart `llama-server` easily directly from the dashboard.
+- **One-Click Server Management**: Start, stop, and restart `llama-server` easily directly from the dashboard. Once the server is running, you can quickly restart it with a single click.
 - **Visual Configuration Editor**: Manage context size, threads, batch sizes, GPU layers, flash attention, and other advanced `llama-server` parameters without manually formatting CLI arguments.
+- **Model Presets & Multi-Model Support**: Combine multiple models into presets, each with their own specific generation arguments (like `presence-penalty`) and server arguments. Automatically load `mmproj` files for multimodal models.
 - **Model Downloader**: Browse and search Hugging Face for GGUF models directly within the panel. Click to download directly into your models directory cleanly, grouping multi-part models seamlessly.
 - **Real-Time Monitoring**: View server health, active slots, context utilization, and uptime metrics updating continuously.
 - **Streamlined Log Viewer**: View server logs in an organized, scrollable panel, with smart filtering to remove repetitive or spammy log lines.
