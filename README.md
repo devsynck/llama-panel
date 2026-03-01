@@ -4,7 +4,8 @@
 
 Built heavily with aesthetics and simplicity in mind, it gives you full control over running local models.
 
-<img width="2556" height="1305" alt="image" src="https://github.com/user-attachments/assets/4728c648-7054-49e7-b711-c5759460f9c0" />
+<img width="2559" height="1295" alt="image" src="https://github.com/user-attachments/assets/adbf2502-7a03-4abc-9c22-8d6248ba02f7" />
+
 
 ## ✨ Features
 
