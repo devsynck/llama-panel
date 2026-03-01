@@ -105,10 +105,13 @@ app.post('/api/hotswap', async (req, res) => {
 // --- File System ---
 app.get('/api/browse-directory', async (req, res) => {
     try {
-        const { execFile } = require('child_process');
+        const { exec, execFile } = require('child_process');
         const fs = require('fs');
         const os = require('os');
-        const script = `
+        const platform = os.platform();
+
+        if (platform === 'win32') {
+            const script = `
 Add-Type -AssemblyName System.Windows.Forms
 $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
 $dialog.Description = "Select Models Directory"
@@ -118,14 +121,36 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
     Write-Output $dialog.SelectedPath
 }
 `;
-        const scriptPath = path.join(os.tmpdir(), 'browse-dialog.ps1');
-        fs.writeFileSync(scriptPath, script);
+            const scriptPath = path.join(os.tmpdir(), 'browse-dialog.ps1');
+            fs.writeFileSync(scriptPath, script);
 
-        execFile('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', scriptPath], (err, stdout) => {
-            if (err) return res.json({ path: null });
-            const selectedMatch = stdout.trim();
-            res.json({ path: selectedMatch || null });
-        });
+            execFile('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', scriptPath], (err, stdout) => {
+                if (err) return res.json({ path: null });
+                const selectedMatch = stdout.trim();
+                res.json({ path: selectedMatch || null });
+            });
+        } else if (platform === 'darwin') {
+            exec('osascript -e \'POSIX path of (choose folder with prompt "Select Models Directory")\'', (err, stdout) => {
+                if (err) return res.json({ path: null });
+                res.json({ path: stdout.trim() || null });
+            });
+        } else if (platform === 'linux') {
+            // Try zenity first
+            exec('zenity --file-selection --directory --title="Select Models Directory"', (err, stdout) => {
+                if (!err && stdout) {
+                    return res.json({ path: stdout.trim() });
+                }
+                // Try kdialog
+                exec('kdialog --getexistingdirectory /', (err2, stdout2) => {
+                    if (!err2 && stdout2) {
+                        return res.json({ path: stdout2.trim() });
+                    }
+                    res.json({ path: null });
+                });
+            });
+        } else {
+            res.json({ path: null });
+        }
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -359,7 +384,8 @@ server.listen(managerPort, '127.0.0.1', () => {
 
     // Auto-open browser
     const { exec } = require('child_process');
-    exec(`start http://127.0.0.1:${managerPort}`);
+    const startCmd = process.platform === 'win32' ? 'start' : process.platform === 'darwin' ? 'open' : 'xdg-open';
+    exec(`${startCmd} http://127.0.0.1:${managerPort}`);
 });
 
 // Graceful shutdown

@@ -14,7 +14,7 @@ Built heavily with aesthetics and simplicity in mind, it gives you full control 
 - **Model Downloader**: Browse and search Hugging Face for GGUF models directly within the panel. Click to download directly into your models directory cleanly, grouping multi-part models seamlessly.
 - **Real-Time Monitoring**: View server health, active slots, context utilization, and uptime metrics updating continuously.
 - **Streamlined Log Viewer**: View server logs in an organized, scrollable panel, with smart filtering to remove repetitive or spammy log lines.
-- **Single Executable Option**: Can be run via a Node.js runtime or compiled down into a zero-dependency standalone Windows Executable (`.exe`).
+- **Single Executable Option**: Can be run via a Node.js runtime or compiled down into a zero-dependency standalone executable for Windows, macOS, or Linux.
 
 ## 🚀 Getting Started
 
@@ -45,16 +45,16 @@ Built heavily with aesthetics and simplicity in mind, it gives you full control 
 
 4. The dashboard will automatically open in your default browser at `http://127.0.0.1:7654`.
 
-### Building the Standalone Executable (Windows)
+### Building the Standalone Executable
 
-Llama Panel can be packaged into a highly portable, single `.exe` file using Node.js Single Executable Applications (SEA). You must use Windows.
+Llama Panel can be packaged into a highly portable, single executable file using Node.js Single Executable Applications (SEA) across Windows, macOS, and Linux.
 
 1. Ensure you have the `devDependencies` installed (`npm install`).
 2. Run the build script:
    ```bash
    npm run build
    ```
-3. A standalone executable will be created at `dist/llama-panel.exe`. You can move this file anywhere and run it without needing Node.js installed.
+3. A standalone executable will be created at `dist/llama-panel.exe` (or `dist/llama-panel` on macOS/Linux). You can move this file anywhere and run it without needing Node.js installed.
 
 ## 🛠️ Usage
 
@@ -65,4 +65,4 @@ Llama Panel can be packaged into a highly portable, single `.exe` file using Nod
 ## 📦 File Tracking
 
 - Models are saved securely inside the directory defined in your Config.
-- Configurations are saved globally to `%APPDATA%/llama-panel/config.json` so your settings persist across updates and standalone executable environments.
+- Configurations are saved globally to `%APPDATA%/llama-panel/config.json` (or `~/.config/llama-panel/config.json` on macOS/Linux) so your settings persist across updates and standalone executable environments.

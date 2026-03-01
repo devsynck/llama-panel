@@ -7,7 +7,10 @@ on:
 
 jobs:
   build-and-release:
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
     permissions:
       contents: write
 
@@ -27,10 +30,18 @@ jobs:
       - name: Build Executable
         run: npm run build
 
+      - name: Rename Executable (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        run: mv dist/llama-panel dist/llama-panel-${{ runner.os }}
+
+      - name: Rename Executable (Windows)
+        if: matrix.os == 'windows-latest'
+        run: Rename-Item -Path dist\llama-panel.exe -NewName llama-panel-${{ runner.os }}.exe
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: dist/llama-panel.exe
+          files: dist/llama-panel-*
           name: Llama Panel ${{ github.ref_name }}
           draft: false
           prerelease: false

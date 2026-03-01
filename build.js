@@ -16,7 +16,8 @@ const BUILD_DIR = path.join(__dirname, 'dist');
 const BUNDLE_FILE = path.join(BUILD_DIR, 'bundle.cjs');
 const SEA_CONFIG = path.join(BUILD_DIR, 'sea-config.json');
 const SEA_BLOB = path.join(BUILD_DIR, 'sea-prep.blob');
-const OUTPUT_EXE = path.join(BUILD_DIR, 'llama-panel.exe');
+const isWindows = process.platform === 'win32';
+const OUTPUT_EXE = path.join(BUILD_DIR, isWindows ? 'llama-panel.exe' : 'llama-panel');
 
 console.log('🦙 Llama Panel — Build Script\n');
 
@@ -91,10 +92,17 @@ try {
 // Step 7: Remove signature (optional)
 console.log('🔐 Step 7: Removing code signature...');
 try {
-    execSync('signtool remove /s "' + OUTPUT_EXE + '"', { stdio: 'pipe' });
-    console.log('   ✅ Signature removed');
+    if (isWindows) {
+        execSync('signtool remove /s "' + OUTPUT_EXE + '"', { stdio: 'pipe' });
+        console.log('   ✅ Signature removed');
+    } else if (process.platform === 'darwin') {
+        execSync('codesign --remove-signature "' + OUTPUT_EXE + '"', { stdio: 'pipe' });
+        console.log('   ✅ Signature removed');
+    } else {
+        console.log('   ℹ️  Skipped for Linux');
+    }
 } catch (e) {
-    console.log('   ⚠️  signtool not available (OK)');
+    console.log('   ⚠️  Signature removal skipped or not available');
 }
 
 // Step 8: Inject SEA blob with postject
@@ -103,8 +111,9 @@ try {
     try { require.resolve('postject'); } catch (e) {
         execSync('npm install --save-dev postject', { cwd: __dirname, stdio: 'inherit' });
     }
+    const machoSegment = process.platform === 'darwin' ? ' --macho-segment-name NODE_SEA' : '';
     execSync(
-        'npx postject "' + OUTPUT_EXE + '" NODE_SEA_BLOB "' + SEA_BLOB + '" --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2',
+        'npx postject "' + OUTPUT_EXE + '" NODE_SEA_BLOB "' + SEA_BLOB + '" --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2' + machoSegment,
         { stdio: 'inherit', cwd: __dirname }
     );
 
@@ -112,7 +121,7 @@ try {
     console.log('');
     console.log('✅ Build complete!');
     console.log('   📁 Output: ' + OUTPUT_EXE);
-    console.log('   🚀 Run:    dist\\llama-panel.exe');
+    console.log('   🚀 Run:    dist' + (isWindows ? '\\llama-panel.exe' : '/llama-panel'));
     console.log('   📦 Size:   ' + exeSize + ' MB');
 } catch (err) {
     console.error('❌ Injection failed:', err.message);
