@@ -35,6 +35,12 @@ const DEFAULT_CONFIG = {
   extraArgs: '',
   modelsDir: MODELS_DIR,
   managerPort: 7654,
+  // Preset mode configuration
+  modelsPresetPath: '',
+  usePresetMode: false,
+  activePresetId: null,
+  // Logging options
+  logDisable: true,
 };
 
 function ensureDirs() {

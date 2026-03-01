@@ -5,6 +5,7 @@ const http = require('http');
 const config = require('./src/config');
 const LlamaManager = require('./src/llama-manager');
 const ModelManager = require('./src/model-manager');
+const PresetManager = require('./src/preset-manager');
 const sysStats = require('./src/sys-stats');
 
 const app = express();
@@ -13,6 +14,7 @@ const server = http.createServer(app);
 // Managers
 const llama = new LlamaManager();
 const models = new ModelManager();
+const presets = new PresetManager();
 
 // Middleware
 app.use(express.json());
@@ -72,6 +74,17 @@ app.post('/api/start', async (req, res) => {
 app.post('/api/stop', async (req, res) => {
     try {
         await llama.stop();
+        res.json({ ok: true, status: llama.status });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/restart', async (req, res) => {
+    try {
+        await llama.stop();
+        await new Promise(r => setTimeout(r, 1500));
+        await llama.start();
         res.json({ ok: true, status: llama.status });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -181,6 +194,97 @@ app.get('/api/downloads/:id', (req, res) => {
     const progress = models.getDownloadProgress(req.params.id);
     if (!progress) return res.status(404).json({ error: 'Download not found' });
     res.json(progress);
+});
+
+app.post('/api/models/migrate', (req, res) => {
+    try {
+        const migrated = models.migrateToFolderStructure();
+        res.json({ ok: true, migrated });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// --- Presets ---
+app.get('/api/presets', (req, res) => {
+    try {
+        res.json(presets.listPresets());
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/presets/:id', (req, res) => {
+    try {
+        const preset = presets.getPreset(req.params.id);
+        if (!preset) return res.status(404).json({ error: 'Preset not found' });
+        res.json(preset);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/presets', (req, res) => {
+    try {
+        const preset = presets.createPreset(req.body);
+        res.json({ ok: true, preset });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+
+app.put('/api/presets/:id', (req, res) => {
+    try {
+        const preset = presets.updatePreset(req.params.id, req.body);
+        res.json({ ok: true, preset });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+
+app.delete('/api/presets/:id', (req, res) => {
+    try {
+        presets.deletePreset(req.params.id);
+        res.json({ ok: true });
+    } catch (err) {
+        res.status(404).json({ error: err.message });
+    }
+});
+
+app.post('/api/presets/:id/activate', async (req, res) => {
+    try {
+        const preset = presets.getPreset(req.params.id);
+        if (!preset) return res.status(404).json({ error: 'Preset not found' });
+
+        const presetPath = presets.getPresetPath(req.params.id);
+        const cfg = config.load();
+
+        // Update config to use preset mode
+        cfg.usePresetMode = true;
+        cfg.modelsPresetPath = presetPath;
+        cfg.activePresetId = preset.id;
+        config.save(cfg);
+
+        res.json({ ok: true, config: cfg });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/presets/deactivate', (req, res) => {
+    try {
+        const cfg = config.load();
+
+        // Disable preset mode
+        cfg.usePresetMode = false;
+        cfg.modelsPresetPath = '';
+        cfg.activePresetId = null;
+        config.save(cfg);
+
+        res.json({ ok: true, config: cfg });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // --- Logs ---

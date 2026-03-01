@@ -1,6 +1,7 @@
 const { spawn } = require('child_process');
 const LogBuffer = require('./log-buffer');
 const config = require('./config');
+const PresetManager = require('./preset-manager');
 
 class LlamaManager {
     constructor() {
@@ -19,50 +20,66 @@ class LlamaManager {
     buildArgs(cfg) {
         const args = [];
 
-        if (cfg.modelPath) {
+        // Check if preset mode is enabled
+        const isPresetMode = cfg.usePresetMode && cfg.modelsPresetPath && require('fs').existsSync(cfg.modelsPresetPath);
+
+        if (isPresetMode) {
+            args.push('--models-preset', cfg.modelsPresetPath);
+            this.logs.push(`[Manager] Using preset mode: ${cfg.modelsPresetPath}`);
+        } else if (cfg.modelPath) {
             args.push('-m', cfg.modelPath);
         }
+
+        // Server-level args (apply in both modes)
         if (cfg.host && cfg.host !== '127.0.0.1') { args.push('--host', cfg.host); }
         if (cfg.port && cfg.port !== 8080) { args.push('--port', String(cfg.port)); }
-        if (cfg.ctxSize) { args.push('-c', String(cfg.ctxSize)); }
-        if (cfg.threads && cfg.threads !== -1) { args.push('-t', String(cfg.threads)); }
-        if (cfg.threadsBatch && cfg.threadsBatch !== -1) { args.push('-tb', String(cfg.threadsBatch)); }
+        if (cfg.apiKey) { args.push('--api-key', cfg.apiKey); }
 
-        // Zero or standard defaults are skipped
-        if (cfg.batchSize && cfg.batchSize !== 2048) { args.push('-b', String(cfg.batchSize)); }
-        if (cfg.ubatchSize && cfg.ubatchSize !== 512) { args.push('-ub', String(cfg.ubatchSize)); }
+        // Model-specific args - in preset mode, let the preset control these
+        // In single model mode, use config values
+        if (!isPresetMode) {
+            if (cfg.ctxSize) { args.push('-c', String(cfg.ctxSize)); }
+            if (cfg.threads && cfg.threads !== -1) { args.push('-t', String(cfg.threads)); }
+            if (cfg.threadsBatch && cfg.threadsBatch !== -1) { args.push('-tb', String(cfg.threadsBatch)); }
+            if (cfg.batchSize && cfg.batchSize !== 2048) { args.push('-b', String(cfg.batchSize)); }
+            if (cfg.ubatchSize && cfg.ubatchSize !== 512) { args.push('-ub', String(cfg.ubatchSize)); }
+            if (cfg.gpuLayers !== undefined && cfg.gpuLayers !== '' && cfg.gpuLayers !== 'auto') { args.push('-ngl', String(cfg.gpuLayers)); }
+            if (cfg.flashAttn && cfg.flashAttn !== '' && cfg.flashAttn !== 'auto') { args.push('-fa', String(cfg.flashAttn)); }
+            if (cfg.contBatching) { args.push('-cb'); }
+            if (cfg.mlock) { args.push('--mlock'); }
+            if (cfg.mmap === false) { args.push('--no-mmap'); }
+            if (cfg.cachePrompt) { args.push('--cache-prompt'); }
+            if (cfg.cacheTypeK && cfg.cacheTypeK !== '' && cfg.cacheTypeK !== 'f16') { args.push('-ctk', cfg.cacheTypeK); }
+            if (cfg.cacheTypeV && cfg.cacheTypeV !== '' && cfg.cacheTypeV !== 'f16') { args.push('-ctv', cfg.cacheTypeV); }
+            if (cfg.splitMode && cfg.splitMode !== '' && cfg.splitMode !== 'layer') { args.push('-sm', cfg.splitMode); }
+        } else {
+            // In preset mode, warn if extraArgs might override preset values
+            if (cfg.extraArgs && cfg.extraArgs.includes('-ngl')) {
+                this.logs.push('[Manager] Warning: extraArgs contains -ngl which may override preset values');
+            }
+        }
 
-        if (cfg.gpuLayers !== undefined && cfg.gpuLayers !== '' && cfg.gpuLayers !== 'auto') { args.push('-ngl', String(cfg.gpuLayers)); }
-        if (cfg.flashAttn && cfg.flashAttn !== '' && cfg.flashAttn !== 'auto') { args.push('-fa', String(cfg.flashAttn)); }
+        // Parallel/slots work in both modes
         if (cfg.parallel && cfg.parallel > 1) {
             args.push('-np', String(cfg.parallel));
-            // Also append --models-max per user request config if used for parallel models slot
             args.push('--models-max', String(cfg.parallel));
         }
 
-        if (cfg.contBatching) { args.push('-cb'); }
-        if (cfg.mlock) { args.push('--mlock'); }
-        if (cfg.mmap === false) { args.push('--no-mmap'); }
-        if (cfg.cachePrompt) { args.push('--cache-prompt'); }
-
-        // Pass metrics & slots natively if not explicitly disabled to feed our dashboard UI
+        // Pass metrics & slots natively if not explicitly disabled
         if (cfg.metrics !== false) { args.push('--metrics'); }
         if (cfg.slots !== false && cfg.modelPath) { args.push('--slots'); }
-
-        if (cfg.cacheTypeK && cfg.cacheTypeK !== '' && cfg.cacheTypeK !== 'f16') { args.push('-ctk', cfg.cacheTypeK); }
-        if (cfg.cacheTypeV && cfg.cacheTypeV !== '' && cfg.cacheTypeV !== 'f16') { args.push('-ctv', cfg.cacheTypeV); }
-        if (cfg.splitMode && cfg.splitMode !== '' && cfg.splitMode !== 'layer') { args.push('-sm', cfg.splitMode); }
-        if (cfg.apiKey) { args.push('--api-key', cfg.apiKey); }
 
         // Disable the built-in webui since we have our own
         // args.push('--no-webui');
         // Verbose logging for stats
         args.push('-v');
-        // Control logging style 
+        // Control logging style
         //args.push('--log-colors', 'off');
-        args.push('--log-disable'); // Disable the HTTP request logging that spam the console
+        if (cfg.logDisable !== false) {
+            args.push('--log-disable');
+        }
 
-        // Extra args
+        // Extra args (user can override anything here)
         if (cfg.extraArgs) {
             const extra = cfg.extraArgs.trim().split(/\s+/);
             args.push(...extra);
@@ -79,8 +96,12 @@ class LlamaManager {
         const cfg = config.load();
         this._currentConfig = cfg;
 
-        if (!cfg.modelPath) {
+        if (!cfg.modelPath && !cfg.usePresetMode) {
             this.logs.push('[Manager] No active model selected. Starting without a model.');
+        }
+
+        if (cfg.usePresetMode && !cfg.modelsPresetPath) {
+            this.logs.push('[Manager] Warning: Preset mode is enabled but no preset path is set.');
         }
 
         const args = this.buildArgs(cfg);
@@ -205,6 +226,20 @@ class LlamaManager {
         this._stopHealthPolling();
         const baseUrl = `http://${cfg.host}:${cfg.port}`;
 
+        // In router mode, get the first model identifier from active preset
+        let modelIdentifier = null;
+        if (cfg.usePresetMode && cfg.activePresetId) {
+            try {
+                const presetManager = new PresetManager();
+                const preset = presetManager.getPreset(cfg.activePresetId);
+                if (preset && preset.models && preset.models.length > 0) {
+                    modelIdentifier = preset.models[0].identifier;
+                }
+            } catch (e) {
+                // Ignore preset loading errors
+            }
+        }
+
         this._healthInterval = setInterval(async () => {
             try {
                 const healthRes = await fetch(`${baseUrl}/health`);
@@ -217,8 +252,12 @@ class LlamaManager {
                 }
 
                 if (this.healthData && (this.healthData.status === 'ok' || this.healthData.status === 'ready')) {
-                    // Fetch slots
-                    const slotsRes = await fetch(`${baseUrl}/slots`);
+                    // Fetch slots - in router mode, need to specify model
+                    let slotsUrl = `${baseUrl}/slots`;
+                    if (modelIdentifier) {
+                        slotsUrl += `?model=${encodeURIComponent(modelIdentifier)}`;
+                    }
+                    const slotsRes = await fetch(slotsUrl);
                     if (slotsRes.ok) {
                         this.slotsData = await slotsRes.json();
                     }

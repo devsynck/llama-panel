@@ -50,6 +50,16 @@
             </svg>
             Models
           </a></li>
+        <li><a href="#" class="nav-link" data-page="presets" id="nav-presets">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="16" y1="13" x2="8" y2="13" />
+              <line x1="16" y1="17" x2="8" y2="17" />
+              <polyline points="10 9 9 9 8 9" />
+            </svg>
+            Presets
+          </a></li>
         <li><a href="#" class="nav-link" data-page="download" id="nav-download">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -320,11 +330,27 @@
                 <small>Set the folder where your .gguf model files are stored</small>
               </div>
               <div class="form-group full-width">
+                <label for="cfg-usePresetMode">Use Preset Mode (Multi-Model)</label>
+                <div class="toggle-group">
+                  <label class="toggle">
+                    <input type="checkbox" id="cfg-usePresetMode">
+                    <span class="toggle-slider"></span>
+                  </label>
+                  <span>Enable preset mode for running multiple models simultaneously</span>
+                </div>
+                <small>When enabled, llama-server will use a preset INI file to load multiple models. Go to the Presets page to configure.</small>
+              </div>
+              <div class="form-group full-width">
+                <label for="cfg-modelPresetPath">Preset INI File Path</label>
+                <input type="text" id="cfg-modelsPresetPath" placeholder="Auto-filled when activating a preset">
+                <small>This is automatically set when you activate a preset from the Presets page</small>
+              </div>
+              <div class="form-group full-width">
                 <label for="cfg-modelPath">Active Model</label>
                 <select id="cfg-modelPath">
                   <option value="">— Set models directory and click Scan —</option>
                 </select>
-                <small>Select a model from your models directory to use with llama-server</small>
+                <small>Select a model from your models directory to use with llama-server (not used in preset mode)</small>
               </div>
               <div class="form-group">
                 <label for="cfg-gpuLayers">GPU Layers</label>
@@ -460,6 +486,13 @@
                 </label>
                 <span>Enable Slots Endpoint</span>
               </div>
+              <div class="toggle-group">
+                <label class="toggle">
+                  <input type="checkbox" id="cfg-logDisable">
+                  <span class="toggle-slider"></span>
+                </label>
+                <span>Disable HTTP Logs</span>
+              </div>
             </div>
           </div>
 
@@ -493,6 +526,82 @@
           <div class="empty-state">Loading models...</div>
         </div>
       </section>
+
+      <!-- Presets Page -->
+      <section id="page-presets" class="page">
+        <div class="page-header">
+          <h1>Model Presets</h1>
+          <button class="btn btn-primary" onclick="showCreatePresetModal()" id="btn-create-preset">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            New Preset
+          </button>
+        </div>
+
+        <!-- Active Preset Banner -->
+        <div id="active-preset-banner" class="active-preset-banner" style="display:none;">
+          <div class="active-preset-info">
+            <span class="active-preset-label">Active Preset:</span>
+            <span class="active-preset-name" id="active-preset-name"></span>
+            <span class="active-preset-models" id="active-preset-models"></span>
+          </div>
+          <button class="btn btn-sm btn-secondary" onclick="deactivatePreset()">Deactivate</button>
+        </div>
+
+        <!-- Presets List -->
+        <div id="presets-list" class="presets-list">
+          <div class="empty-state">Loading presets...</div>
+        </div>
+      </section>
+
+      <!-- Preset Editor Modal -->
+      <div id="preset-modal" class="modal" style="display:none;">
+        <div class="modal-backdrop" onclick="closePresetModal()"></div>
+        <div class="modal-content preset-modal-content">
+          <div class="modal-header">
+            <h3 id="preset-modal-title">Create Preset</h3>
+            <button class="btn-close" onclick="closePresetModal()">&times;</button>
+          </div>
+          <div class="modal-body preset-modal-body">
+            <form id="preset-form" onsubmit="event.preventDefault(); savePreset();">
+              <div class="preset-form-section">
+                <h4>Preset Information</h4>
+                <div class="config-grid">
+                  <div class="form-group">
+                    <label for="preset-name">Name *</label>
+                    <input type="text" id="preset-name" placeholder="My Awesome Preset" required>
+                  </div>
+                  <div class="form-group">
+                    <label for="preset-description">Description</label>
+                    <input type="text" id="preset-description" placeholder="A brief description of this preset">
+                  </div>
+                </div>
+              </div>
+
+              <div class="preset-form-section">
+                <h4>Models</h4>
+                <div id="preset-models-editor" class="preset-models-editor">
+                  <!-- Models will be added here -->
+                </div>
+                <button type="button" class="btn btn-sm btn-secondary btn-add-model" onclick="addPresetModel()">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                  Add Model
+                </button>
+              </div>
+
+              <div class="preset-modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closePresetModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save Preset</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
 
       <!-- Download Page -->
       <section id="page-download" class="page">

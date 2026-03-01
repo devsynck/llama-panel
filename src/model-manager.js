@@ -18,43 +18,117 @@ class ModelManager {
         const dir = this.getModelsDir();
         if (!fs.existsSync(dir)) return [];
 
-        const files = fs.readdirSync(dir);
         const models = [];
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
 
-        for (const file of files) {
-            const ext = path.extname(file).toLowerCase();
-            if (ext !== '.gguf') continue;
+        for (const entry of entries) {
+            if (entry.isDirectory()) {
+                // Scan subdirectory for models
+                const subModel = this._scanModelDirectory(path.join(dir, entry.name), entry.name);
+                if (subModel) models.push(subModel);
+            } else if (entry.isFile()) {
+                // Handle legacy flat structure (backward compatibility)
+                const file = entry.name;
+                const ext = path.extname(file).toLowerCase();
+                if (ext !== '.gguf') continue;
 
-            // Skip split parts that are not the first one (00001)
-            // Pattern: xxxxx-00002-of-00005.gguf
-            const splitMatch = file.match(/-(\d{5})-of-(\d{5})\.gguf$/i);
-            if (splitMatch && splitMatch[1] !== '00001') {
-                continue;
+                // Skip split parts that are not the first one (00001)
+                const splitMatch = file.match(/-(\d{5})-of-(\d{5})\.gguf$/i);
+                if (splitMatch && splitMatch[1] !== '00001') {
+                    continue;
+                }
+
+                const filePath = path.join(dir, file);
+                try {
+                    const stat = fs.statSync(filePath);
+                    // Check for associated mmproj file
+                    const mmprojName = file.replace(/\.gguf$/i, '-mmproj.gguf');
+                    const mmprojPath = path.join(dir, mmprojName);
+                    const hasMmproj = fs.existsSync(mmprojPath);
+
+                    models.push({
+                        name: file,
+                        path: filePath,
+                        size: stat.size,
+                        sizeHuman: formatSize(stat.size),
+                        modified: stat.mtime.toISOString(),
+                        isLegacy: true,
+                        hasMmproj: hasMmproj,
+                        mmprojPath: hasMmproj ? mmprojPath : null,
+                    });
+                } catch (_) { /* skip */ }
             }
-
-            const filePath = path.join(dir, file);
-            try {
-                const stat = fs.statSync(filePath);
-                models.push({
-                    name: file,
-                    path: filePath,
-                    size: stat.size,
-                    sizeHuman: formatSize(stat.size),
-                    modified: stat.mtime.toISOString(),
-                });
-            } catch (_) { /* skip */ }
         }
 
         return models.sort((a, b) => b.modified.localeCompare(a.modified));
     }
 
-    deleteModel(filename) {
-        const filePath = path.join(this.getModelsDir(), filename);
-        if (!fs.existsSync(filePath)) {
-            throw new Error('Model not found');
+    _scanModelDirectory(dirPath, folderName) {
+        const files = fs.readdirSync(dirPath);
+        const ggufFiles = files.filter(f => f.toLowerCase().endsWith('.gguf') && !f.toLowerCase().includes('mmproj'));
+        const mmprojFiles = files.filter(f => f.toLowerCase().includes('mmproj'));
+
+        if (ggufFiles.length === 0) return null;
+
+        // Find the main model file (first split or largest file)
+        let mainFile = ggufFiles[0];
+        let totalSize = 0;
+        for (const file of ggufFiles) {
+            const filePath = path.join(dirPath, file);
+            const stat = fs.statSync(filePath);
+            totalSize += stat.size;
         }
-        fs.unlinkSync(filePath);
-        return true;
+
+        // Check if this is a split model and get the first part
+        const splitMatch = mainFile.match(/-(\d{5})-of-(\d{5})\.gguf$/i);
+        if (splitMatch && splitMatch[1] !== '00001') {
+            // Find the first part
+            const firstPart = ggufFiles.find(f => f.match(/-00001-of-\d{5}\.gguf$/i));
+            if (firstPart) mainFile = firstPart;
+        }
+
+        const stat = fs.statSync(path.join(dirPath, mainFile));
+        const hasMmproj = mmprojFiles.length > 0;
+        const isSplit = ggufFiles.length > 1;
+
+        return {
+            name: folderName,
+            path: path.join(dirPath, mainFile),
+            folderPath: dirPath,
+            size: totalSize,
+            sizeHuman: formatSize(totalSize),
+            modified: stat.mtime.toISOString(),
+            fileCount: ggufFiles.length,
+            hasMmproj: hasMmproj,
+            mmprojPath: hasMmproj ? path.join(dirPath, mmprojFiles[0]) : null,
+            isSplit: isSplit,
+        };
+    }
+
+    deleteModel(modelIdentifier) {
+        const dir = this.getModelsDir();
+
+        // Check if it's a folder (new structure)
+        const folderPath = path.join(dir, modelIdentifier);
+        if (fs.existsSync(folderPath) && fs.statSync(folderPath).isDirectory()) {
+            fs.rmSync(folderPath, { recursive: true, force: true });
+            return true;
+        }
+
+        // Fallback for legacy flat structure (filename)
+        const filePath = path.join(dir, modelIdentifier);
+        if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+            fs.unlinkSync(filePath);
+            // Also delete associated mmproj file if exists
+            const mmprojName = modelIdentifier.replace(/\.gguf$/i, '-mmproj.gguf');
+            const mmprojPath = path.join(dir, mmprojName);
+            if (fs.existsSync(mmprojPath)) {
+                fs.unlinkSync(mmprojPath);
+            }
+            return true;
+        }
+
+        throw new Error('Model not found');
     }
 
     async downloadFromHuggingFace(repoId, filenames, hfToken) {
@@ -65,13 +139,40 @@ class ModelManager {
         const dir = this.getModelsDir();
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
-        // Use a logical name for the display (e.g. Q4_K_M or first file)
-        let displayName = filesToDownload[0];
-        const folderMatch = displayName.match(/^([^/]+)\//);
+        // Extract model name for subfolder
+        const firstFile = filesToDownload[0];
+        let modelName = firstFile;
+
+        // Remove directory prefix if present
+        const folderMatch = firstFile.match(/^([^/]+)\//);
+        if (folderMatch) {
+            modelName = folderMatch[1];
+        } else {
+            // Extract base name from filename (remove split suffix and extension)
+            const splitMatch = firstFile.match(/^(.*?)-\d{5}-of-\d{5}\.gguf$/);
+            if (splitMatch) {
+                modelName = splitMatch[1];
+            } else {
+                modelName = firstFile.replace(/\.gguf$/i, '');
+            }
+        }
+
+        // Sanitize model name for folder
+        modelName = modelName.replace(/[^a-zA-Z0-9._-]/g, '_');
+
+        // Create subfolder for this model
+        const modelDir = path.join(dir, modelName);
+        if (!fs.existsSync(modelDir)) {
+            fs.mkdirSync(modelDir, { recursive: true });
+        }
+
+        // Use a logical name for the display
+        let displayName = firstFile;
         if (folderMatch) displayName = folderMatch[1];
         else {
             const splitMatch = displayName.match(/^(.*?)-\d{5}-of-\d{5}\.gguf$/);
             if (splitMatch) displayName = splitMatch[1];
+            else displayName = displayName.replace(/\.gguf$/i, '');
         }
 
         const downloadState = {
@@ -91,8 +192,8 @@ class ModelManager {
 
         this.downloads.set(downloadId, downloadState);
 
-        // Start download in background
-        this._doDownloadSequence(downloadId, repoId, filesToDownload, dir, hfToken).catch(err => {
+        // Start download in background to modelDir instead of dir
+        this._doDownloadSequence(downloadId, repoId, filesToDownload, modelDir, hfToken).catch(err => {
             downloadState.status = 'error';
             downloadState.error = err.message;
         });
@@ -145,8 +246,8 @@ class ModelManager {
             const filename = filesToDownload[i];
             state.currentFileIndex = i;
 
-            // Flatten directory structure "Q4_K_M/model.gguf" -> "model.gguf"
-            const localFilename = path.basename(filename);
+            // Use basename for local filename, but handle mmproj files specially
+            let localFilename = path.basename(filename);
             const destPath = path.join(dir, localFilename);
             const tempPath = destPath + '.downloading';
 
@@ -308,6 +409,61 @@ class ModelManager {
             files: g.files.sort(),
             isSplit: g.files.length > 1,
         }));
+    }
+
+    migrateToFolderStructure() {
+        const dir = this.getModelsDir();
+        if (!fs.existsSync(dir)) return 0;
+
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        let migrated = 0;
+
+        for (const entry of entries) {
+            if (entry.isFile() && entry.name.toLowerCase().endsWith('.gguf')) {
+                // Create folder based on filename
+                let folderName = entry.name.replace(/\.gguf$/i, '');
+
+                // Remove split suffix for folder name
+                folderName = folderName.replace(/-(\d{5})-of-(\d{5})$/, '');
+
+                // Sanitize folder name
+                folderName = folderName.replace(/[^a-zA-Z0-9._-]/g, '_');
+
+                const newDir = path.join(dir, folderName);
+
+                // Skip if folder already exists
+                if (fs.existsSync(newDir)) {
+                    // Move file into existing folder
+                    const filePath = path.join(dir, entry.name);
+                    const newPath = path.join(newDir, entry.name);
+                    if (!fs.existsSync(newPath)) {
+                        fs.renameSync(filePath, newPath);
+                        migrated++;
+                    }
+                    continue;
+                }
+
+                // Create new folder
+                fs.mkdirSync(newDir, { recursive: true });
+
+                // Move model file
+                const filePath = path.join(dir, entry.name);
+                const newPath = path.join(newDir, entry.name);
+                fs.renameSync(filePath, newPath);
+
+                // Move associated mmproj file if exists
+                const mmprojName = entry.name.replace(/\.gguf$/i, '-mmproj.gguf');
+                const mmprojPath = path.join(dir, mmprojName);
+                if (fs.existsSync(mmprojPath)) {
+                    const newMmprojPath = path.join(newDir, mmprojName);
+                    fs.renameSync(mmprojPath, newMmprojPath);
+                }
+
+                migrated++;
+            }
+        }
+
+        return migrated;
     }
 }
 

@@ -30,6 +30,7 @@ function navigateTo(page) {
     // Load page data
     if (page === 'config') loadConfig();
     if (page === 'models') refreshModels();
+    if (page === 'presets') refreshPresets();
 }
 
 // ============ WebSocket ============
@@ -96,7 +97,19 @@ function updateDashboard(data) {
     indicatorText.textContent = s.text;
 
     // Buttons
-    document.getElementById('btn-start').disabled = data.status === 'running' || data.status === 'starting';
+    const btnStart = document.getElementById('btn-start');
+    if (data.status === 'running') {
+        btnStart.disabled = false;
+        btnStart.className = 'btn btn-warning';
+        btnStart.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg> Restart Server`;
+        btnStart.onclick = restartServer;
+    } else {
+        btnStart.disabled = data.status === 'starting';
+        btnStart.className = 'btn btn-success';
+        btnStart.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" stroke="none" width="16" height="16"><polygon points="5 3 19 12 5 21 5 3"/></svg> Start Server`;
+        btnStart.onclick = startServer;
+    }
+
     document.getElementById('btn-stop').disabled = data.status === 'stopped';
 
     // Uptime
@@ -318,12 +331,29 @@ async function stopServer() {
         const res = await fetch('/api/stop', { method: 'POST' });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to stop');
-        showToast('Server stopped', 'info');
+        showToast('Server is stopping...', 'info');
     } catch (err) {
         showToast(err.message, 'error');
+        btn.disabled = false;
     }
     btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" stroke="none" width="16" height="16"><rect x="6" y="6" width="12" height="12" rx="1"/></svg> Stop Server`;
     btn.disabled = true;
+}
+
+async function restartServer() {
+    const btn = document.getElementById('btn-start');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Restarting...';
+    try {
+        const res = await fetch('/api/restart', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to restart');
+        showToast('Server is restarting...', 'success');
+    } catch (err) {
+        showToast(err.message, 'error');
+        btn.disabled = false;
+        btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="1 4 1 10 7 10"></polyline><polyline points="23 20 23 14 17 14"></polyline><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg> Restart Server`;
+    }
 }
 
 // ============ Config ============
@@ -343,7 +373,7 @@ function populateConfigForm(cfg) {
     const fields = [
         'host', 'port', 'ctxSize', 'threads', 'threadsBatch',
         'batchSize', 'ubatchSize', 'gpuLayers', 'parallel', 'apiKey',
-        'extraArgs', 'modelsDir', 'managerPort'
+        'extraArgs', 'modelsDir', 'managerPort', 'modelsPresetPath'
     ];
     for (const field of fields) {
         const el = document.getElementById(`cfg-${field}`);
@@ -362,7 +392,7 @@ function populateConfigForm(cfg) {
     }
 
     // Checkboxes
-    const toggles = ['contBatching', 'mlock', 'mmap', 'cachePrompt', 'metrics', 'slots'];
+    const toggles = ['contBatching', 'mlock', 'mmap', 'cachePrompt', 'metrics', 'slots', 'usePresetMode', 'logDisable'];
     for (const field of toggles) {
         const el = document.getElementById(`cfg-${field}`);
         if (el && cfg[field] !== undefined) {
@@ -402,6 +432,9 @@ async function saveConfig() {
         extraArgs: document.getElementById('cfg-extraArgs').value,
         modelsDir: document.getElementById('cfg-modelsDir').value,
         managerPort: parseInt(document.getElementById('cfg-managerPort').value) || 7654,
+        usePresetMode: document.getElementById('cfg-usePresetMode').checked,
+        modelsPresetPath: document.getElementById('cfg-modelsPresetPath').value,
+        logDisable: document.getElementById('cfg-logDisable').checked,
     };
 
     try {
@@ -464,16 +497,37 @@ function refreshModelSelect(selectedPath = null) {
                 }
             }
 
-            select.innerHTML = '<option value="">— Select a Model —</option>' +
-                models.map(m => {
+            // Group by folder/legacy for better organization
+            const grouped = {};
+            for (const model of models) {
+                if (model.isLegacy) {
+                    if (!grouped['Legacy (Flat)']) grouped['Legacy (Flat)'] = [];
+                    grouped['Legacy (Flat)'].push(model);
+                } else {
+                    if (!grouped['Organized']) grouped['Organized'] = [];
+                    grouped['Organized'].push(model);
+                }
+            }
+
+            let html = '<option value="">— Select a Model —</option>';
+            for (const [group, groupModels] of Object.entries(grouped)) {
+                html += `<optgroup label="${group}">`;
+                for (const m of groupModels) {
+                    const label = m.isSplit
+                        ? `${escapeHtml(m.name)} (Split: ${m.fileCount} files)`
+                        : escapeHtml(m.name);
                     const isSelected = m.path === healedPrevValue ? 'selected' : '';
-                    return `<option value="${escapeHtml(m.path)}" ${isSelected}>${escapeHtml(m.name)}  (${m.sizeHuman})</option>`;
-                }).join('');
+                    html += `<option value="${escapeHtml(m.path)}" ${isSelected}>${label} (${m.sizeHuman})</option>`;
+                }
+                html += '</optgroup>';
+            }
 
             // If it STILL isn't found even after healing attempt
             if (healedPrevValue && !models.some(m => m.path === healedPrevValue)) {
-                select.innerHTML += `<option value="${escapeHtml(healedPrevValue)}" selected>⚠️ ${escapeHtml(shortenPath(healedPrevValue))} (Not Found in Dir)</option>`;
+                html += `<option value="${escapeHtml(healedPrevValue)}" selected>⚠️ ${escapeHtml(shortenPath(healedPrevValue))} (Not Found in Dir)</option>`;
             }
+
+            select.innerHTML = html;
         })
         .catch(err => {
             select.disabled = false;
@@ -496,10 +550,19 @@ async function refreshModels() {
             return;
         }
 
-        container.innerHTML = models.map(m => `
+        container.innerHTML = models.map(m => {
+            const badges = [];
+            if (m.isLegacy) badges.push('<span class="tag" style="background:var(--warning-bg);color:var(--warning)">Legacy</span>');
+            if (m.isSplit) badges.push(`<span class="tag">Split: ${m.fileCount} files</span>`);
+            if (m.hasMmproj) badges.push('<span class="tag">Vision</span>');
+
+            return `
       <div class="model-item">
         <div class="model-info">
-          <div class="model-name">${escapeHtml(m.name)}</div>
+          <div class="model-name">
+            ${escapeHtml(m.name)}
+            ${badges.length > 0 ? '<div style="display:flex;gap:6px;margin-top:4px;">' + badges.join('') + '</div>' : ''}
+          </div>
           <div class="model-meta">
             <span>📦 ${m.sizeHuman}</span>
             <span>📅 ${new Date(m.modified).toLocaleDateString()}</span>
@@ -509,12 +572,13 @@ async function refreshModels() {
           <button class="btn btn-sm btn-primary" onclick="hotswapModel('${escapeHtml(m.path).replace(/\\/g, '\\\\')}')" title="Load this model">
             ⚡ Load
           </button>
-          <button class="btn btn-sm btn-danger" onclick="deleteModel('${escapeHtml(m.name)}')" title="Delete this model">
+          <button class="btn btn-sm btn-danger" onclick="deleteModel('${escapeHtml(m.isLegacy ? m.name : m.name)}')" title="Delete this model">
             🗑 Delete
           </button>
         </div>
       </div>
-    `).join('');
+    `;
+        }).join('');
     } catch (err) {
         container.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
     }
@@ -781,6 +845,517 @@ function escapeHtml(str) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
+}
+
+// ============ Presets ============
+
+let currentEditingPresetId = null;
+let availableModelsForPreset = [];
+
+async function refreshPresets() {
+    const container = document.getElementById('presets-list');
+    const banner = document.getElementById('active-preset-banner');
+    container.innerHTML = '<div class="empty-state">Loading presets...</div>';
+
+    try {
+        // Load presets and config in parallel
+        const [presetsRes, configRes] = await Promise.all([
+            fetch('/api/presets'),
+            fetch('/api/config'),
+        ]);
+
+        const presets = await presetsRes.json();
+        const cfg = await configRes.json();
+
+        // Update active preset banner
+        if (cfg.usePresetMode && cfg.activePresetId) {
+            const activePreset = presets.find(p => p.id === cfg.activePresetId);
+            if (activePreset) {
+                document.getElementById('active-preset-name').textContent = activePreset.name;
+                document.getElementById('active-preset-models').textContent =
+                    `${activePreset.models.length} model${activePreset.models.length > 1 ? 's' : ''}`;
+                banner.style.display = 'flex';
+            } else {
+                banner.style.display = 'none';
+            }
+        } else {
+            banner.style.display = 'none';
+        }
+
+        if (presets.length === 0) {
+            container.innerHTML = '<div class="empty-state">No presets found. Create a new preset to manage multiple models.</div>';
+            return;
+        }
+
+        container.innerHTML = presets.map(p => {
+            const isActive = cfg.activePresetId === p.id;
+            const activeBadge = isActive ? '<span class="tag" style="background:var(--success-bg);color:var(--success)">Active</span>' : '';
+
+            return `
+        <div class="preset-item">
+          <div class="preset-header">
+            <div class="preset-title">
+              <div class="preset-name">
+                ${escapeHtml(p.name)}
+                ${activeBadge}
+              </div>
+              <div class="preset-description">${escapeHtml(p.description || 'No description')}</div>
+            </div>
+            <div class="preset-actions">
+              ${!isActive ? `
+                <button class="btn btn-sm btn-success" onclick="activatePreset('${p.id}')" title="Activate this preset">
+                  ✓ Activate
+                </button>
+              ` : ''}
+              <button class="btn btn-sm btn-secondary" onclick="editPreset('${p.id}')" title="Edit this preset">
+                ✏️ Edit
+              </button>
+              <button class="btn btn-sm btn-danger" onclick="deletePreset('${p.id}', '${escapeHtml(p.name).replace(/'/g, "\\'")}')" title="Delete this preset">
+                🗑 Delete
+              </button>
+            </div>
+          </div>
+          <div class="preset-meta">
+            <span>📅 ${new Date(p.updatedAt).toLocaleDateString()}</span>
+            <span>🧠 ${p.models.length} model${p.models.length > 1 ? 's' : ''}</span>
+          </div>
+          <div class="preset-models-list">
+            ${p.models.map(m => {
+                const params = [];
+                if (m.ctxSize && m.ctxSize !== 4096) params.push(`ctx:${m.ctxSize}`);
+                if (m.gpuLayers) params.push(`ngl:${m.gpuLayers}`);
+                if (m.temp && m.temp !== 0.8) params.push(`temp:${m.temp}`);
+                if (m.topP && m.topP !== 0.95) params.push(`top_p:${m.topP}`);
+                const paramsStr = params.length > 0 ? `<span style="color:var(--text-dim);font-size:0.75rem;margin-left:8px;">(${params.join(', ')})</span>` : '';
+
+                return `
+              <div class="preset-model-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                </svg>
+                <span class="preset-model-identifier">${escapeHtml(m.identifier)}</span>
+                ${paramsStr}
+              </div>
+            `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+        }).join('');
+    } catch (err) {
+        container.innerHTML = `<div class="empty-state">Error: ${err.message}</div>`;
+    }
+}
+
+async function activatePreset(id) {
+    showToast('Activating preset...', 'info');
+    try {
+        const res = await fetch(`/api/presets/${id}/activate`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        showToast('Preset activated! Restart the server to apply.', 'success');
+        refreshPresets();
+    } catch (err) {
+        showToast('Failed to activate: ' + err.message, 'error');
+    }
+}
+
+async function deactivatePreset() {
+    showToast('Deactivating preset mode...', 'info');
+    try {
+        const res = await fetch('/api/presets/deactivate', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        showToast('Preset mode deactivated.', 'success');
+        refreshPresets();
+    } catch (err) {
+        showToast('Failed to deactivate: ' + err.message, 'error');
+    }
+}
+
+function showCreatePresetModal() {
+    currentEditingPresetId = null;
+    document.getElementById('preset-modal-title').textContent = 'Create Preset';
+    document.getElementById('preset-name').value = '';
+    document.getElementById('preset-description').value = '';
+    document.getElementById('preset-models-editor').innerHTML = '';
+
+    // Add first model slot
+    addPresetModel();
+
+    document.getElementById('preset-modal').style.display = 'flex';
+}
+
+function editPreset(id) {
+    fetch(`/api/presets/${id}`)
+        .then(r => r.json())
+        .then(preset => {
+            currentEditingPresetId = id;
+            document.getElementById('preset-modal-title').textContent = 'Edit Preset';
+            document.getElementById('preset-name').value = preset.name;
+            document.getElementById('preset-description').value = preset.description || '';
+
+            // Load models into editor
+            const editor = document.getElementById('preset-models-editor');
+            editor.innerHTML = '';
+            preset.models.forEach(model => {
+                addPresetModel(model);
+            });
+
+            document.getElementById('preset-modal').style.display = 'flex';
+        })
+        .catch(err => {
+            showToast('Failed to load preset: ' + err.message, 'error');
+        });
+}
+
+function closePresetModal() {
+    document.getElementById('preset-modal').style.display = 'none';
+    currentEditingPresetId = null;
+}
+
+async function addPresetModel(existingModel = null) {
+    const editor = document.getElementById('preset-models-editor');
+
+    // Fetch available models if not already loaded
+    if (availableModelsForPreset.length === 0) {
+        try {
+            const res = await fetch('/api/models');
+            availableModelsForPreset = await res.json();
+        } catch (err) {
+            showToast('Failed to load models', 'error');
+            return;
+        }
+    }
+
+    const modelIndex = editor.children.length;
+    const modelDiv = document.createElement('div');
+    modelDiv.className = 'preset-model-editor-item';
+
+    // Helper to get value from existing model - NO DEFAULTS when editing
+    // If field doesn't exist in existingModel, return undefined so field stays empty
+    const val = (field) => existingModel && existingModel[field] !== undefined ? existingModel[field] : undefined;
+    const valStr = (field) => existingModel && existingModel[field] !== undefined ? String(existingModel[field]) : '';
+
+    modelDiv.innerHTML = `
+        <div class="preset-model-header">
+            <div class="form-group">
+                <label>Identifier *</label>
+                <input type="text" class="preset-model-identifier-input" placeholder="llama-2-7b" value="${escapeHtml(valStr('identifier'))}" required>
+            </div>
+            <div class="form-group">
+                <label>Model Path *</label>
+                <select class="preset-model-path-select" required>
+                    <option value="">Select a model...</option>
+                    ${availableModelsForPreset.map(m => {
+        const selected = existingModel && existingModel.modelPath === m.path ? 'selected' : '';
+        return `<option value="${escapeHtml(m.path)}" ${selected}>${escapeHtml(m.name)} (${m.sizeHuman})</option>`;
+    }).join('')}
+                </select>
+            </div>
+            <button type="button" class="btn btn-sm btn-danger btn-remove-model" onclick="this.closest('.preset-model-editor-item').remove();">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+                    <polyline points="3 6 5 6 21 6" />
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                </svg>
+            </button>
+        </div>
+
+        <div class="preset-model-config">
+            <!-- Server Arguments Section -->
+            <div class="preset-model-config-section" onclick="togglePresetConfigSection(this)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="9 18 15 12 9 6" />
+                </svg>
+                <span>Server Arguments</span>
+            </div>
+            <div class="preset-model-config-fields expanded">
+                <div class="form-group">
+                    <label>Context Size</label>
+                    <input type="number" class="preset-model-ctx-size" value="${valStr('ctxSize')}" placeholder="4096">
+                </div>
+                <div class="form-group">
+                    <label>GPU Layers</label>
+                    <input type="text" class="preset-model-gpu-layers" value="${escapeHtml(valStr('gpuLayers'))}" placeholder="99 or auto">
+                </div>
+                <div class="form-group">
+                    <label>Threads</label>
+                    <input type="number" class="preset-model-threads" value="${valStr('threads')}" placeholder="-1 for auto">
+                </div>
+                <div class="form-group">
+                    <label>Threads Batch</label>
+                    <input type="number" class="preset-model-threads-batch" value="${valStr('threadsBatch')}" placeholder="-1 for auto">
+                </div>
+                <div class="form-group">
+                    <label>Batch Size</label>
+                    <input type="number" class="preset-model-batch-size" value="${valStr('batchSize')}" placeholder="2048">
+                </div>
+                <div class="form-group">
+                    <label>Micro Batch Size</label>
+                    <input type="number" class="preset-model-ubatch-size" value="${valStr('ubatchSize')}" placeholder="512">
+                </div>
+                <div class="form-group">
+                    <label>Flash Attention</label>
+                    <select class="preset-model-flash-attn">
+                        <option value="" ${!val('flashAttn') ? 'selected' : ''}>Default</option>
+                        <option value="on" ${val('flashAttn') === 'on' ? 'selected' : ''}>On</option>
+                        <option value="off" ${val('flashAttn') === 'off' ? 'selected' : ''}>Off</option>
+                        <option value="auto" ${val('flashAttn') === 'auto' ? 'selected' : ''}>Auto</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Split Mode</label>
+                    <select class="preset-model-split-mode">
+                        <option value="" ${!val('splitMode') ? 'selected' : ''}>Default</option>
+                        <option value="layer" ${val('splitMode') === 'layer' ? 'selected' : ''}>Layer</option>
+                        <option value="row" ${val('splitMode') === 'row' ? 'selected' : ''}>Row</option>
+                        <option value="none" ${val('splitMode') === 'none' ? 'selected' : ''}>None</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Memory Options Section -->
+            <div class="preset-model-config-section" onclick="togglePresetConfigSection(this)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="9 18 15 12 9 6" />
+                </svg>
+                <span>Memory Options</span>
+            </div>
+            <div class="preset-model-config-fields">
+                <!-- First row: Dropdowns -->
+                <div class="form-group">
+                    <label>Cache Type K</label>
+                    <select class="preset-model-cache-type-k">
+                        <option value="" ${!val('cacheTypeK') ? 'selected' : ''}>Default (f16)</option>
+                        <option value="f16" ${val('cacheTypeK') === 'f16' ? 'selected' : ''}>f16</option>
+                        <option value="f32" ${val('cacheTypeK') === 'f32' ? 'selected' : ''}>f32</option>
+                        <option value="bf16" ${val('cacheTypeK') === 'bf16' ? 'selected' : ''}>bf16</option>
+                        <option value="q8_0" ${val('cacheTypeK') === 'q8_0' ? 'selected' : ''}>q8_0</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Cache Type V</label>
+                    <select class="preset-model-cache-type-v">
+                        <option value="" ${!val('cacheTypeV') ? 'selected' : ''}>Default (f16)</option>
+                        <option value="f16" ${val('cacheTypeV') === 'f16' ? 'selected' : ''}>f16</option>
+                        <option value="f32" ${val('cacheTypeV') === 'f32' ? 'selected' : ''}>f32</option>
+                        <option value="bf16" ${val('cacheTypeV') === 'bf16' ? 'selected' : ''}>bf16</option>
+                        <option value="q8_0" ${val('cacheTypeV') === 'q8_0' ? 'selected' : ''}>q8_0</option>
+                    </select>
+                </div>
+                <!-- Second row: Checkboxes -->
+                <div class="checkbox-row">
+                    <label class="checkbox-label">
+                        <input type="checkbox" class="preset-model-mlock" ${val('mlock') ? 'checked' : ''}>
+                        <span>Memory Lock (mlock)</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" class="preset-model-mmap" ${val('mmap') !== false ? 'checked' : ''}>
+                        <span>Memory Map (mmap)</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" class="preset-model-cache-prompt" ${val('cachePrompt') ? 'checked' : ''}>
+                        <span>Prompt Caching</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" class="preset-model-load-mmproj" ${val('loadMmproj') ? 'checked' : ''}>
+                        <span>Load MMProj</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Generation Parameters Section -->
+            <div class="preset-model-config-section" onclick="togglePresetConfigSection(this)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="9 18 15 12 9 6" />
+                </svg>
+                <span>Generation Parameters</span>
+            </div>
+            <div class="preset-model-config-fields">
+                <div class="form-group">
+                    <label>Temperature</label>
+                    <input type="number" step="0.1" min="0" max="2" class="preset-model-temp" value="${valStr('temp')}" placeholder="0.8">
+                </div>
+                <div class="form-group">
+                    <label>Top K</label>
+                    <input type="number" min="0" class="preset-model-top-k" value="${valStr('topK')}" placeholder="40">
+                </div>
+                <div class="form-group">
+                    <label>Top P</label>
+                    <input type="number" step="0.01" min="0" max="1" class="preset-model-top-p" value="${valStr('topP')}" placeholder="0.9">
+                </div>
+                <div class="form-group">
+                    <label>Min P</label>
+                    <input type="number" step="0.01" min="0" max="1" class="preset-model-min-p" value="${valStr('minP')}" placeholder="0.05">
+                </div>
+                <div class="form-group">
+                    <label>Repeat Penalty</label>
+                    <input type="number" step="0.1" min="0" class="preset-model-repeat-penalty" value="${valStr('repeatPenalty')}" placeholder="1.1">
+                </div>
+                <div class="form-group">
+                    <label>Presence Penalty</label>
+                    <input type="number" step="0.1" min="0" class="preset-model-presence-penalty" value="${valStr('presencePenalty')}" placeholder="0.0">
+                </div>
+            </div>
+        </div>
+    `;
+    editor.appendChild(modelDiv);
+}
+
+function togglePresetConfigSection(header) {
+    header.classList.toggle('expanded');
+    const fields = header.nextElementSibling;
+    fields.classList.toggle('expanded');
+}
+
+async function savePreset() {
+    const name = document.getElementById('preset-name').value.trim();
+    const description = document.getElementById('preset-description').value.trim();
+
+    if (!name) {
+        showToast('Name is required', 'error');
+        return;
+    }
+
+    // Collect models from editor
+    const modelEditors = document.querySelectorAll('.preset-model-editor-item');
+    const models = [];
+    let hasError = false;
+
+    for (const editor of modelEditors) {
+        const identifier = editor.querySelector('.preset-model-identifier-input').value.trim();
+        const modelPath = editor.querySelector('.preset-model-path-select').value;
+
+        if (!identifier || !modelPath) {
+            hasError = true;
+            break;
+        }
+
+        // Collect all parameters from the form - only include if value is set
+        const modelConfig = {
+            identifier,
+            modelPath,
+        };
+
+        // Helper to add optional values
+        const addIfSet = (key, value, skipEmptyString = true) => {
+            if (value !== undefined && value !== null && value !== '' && !Number.isNaN(value)) {
+                modelConfig[key] = value;
+            }
+        };
+
+        // Server arguments
+        const ctxSizeVal = parseInt(editor.querySelector('.preset-model-ctx-size')?.value);
+        addIfSet('ctxSize', ctxSizeVal);
+
+        const gpuLayersVal = editor.querySelector('.preset-model-gpu-layers')?.value;
+        addIfSet('gpuLayers', gpuLayersVal);
+
+        const threadsVal = parseInt(editor.querySelector('.preset-model-threads')?.value);
+        addIfSet('threads', threadsVal);
+
+        const threadsBatchVal = parseInt(editor.querySelector('.preset-model-threads-batch')?.value);
+        addIfSet('threadsBatch', threadsBatchVal);
+
+        const batchSizeVal = parseInt(editor.querySelector('.preset-model-batch-size')?.value);
+        addIfSet('batchSize', batchSizeVal);
+
+        const ubatchSizeVal = parseInt(editor.querySelector('.preset-model-ubatch-size')?.value);
+        addIfSet('ubatchSize', ubatchSizeVal);
+
+        const flashAttnVal = editor.querySelector('.preset-model-flash-attn')?.value;
+        addIfSet('flashAttn', flashAttnVal);
+
+        const splitModeVal = editor.querySelector('.preset-model-split-mode')?.value;
+        addIfSet('splitMode', splitModeVal);
+
+        // Memory options
+        const cacheTypeKVal = editor.querySelector('.preset-model-cache-type-k')?.value;
+        addIfSet('cacheTypeK', cacheTypeKVal);
+
+        const cacheTypeVVal = editor.querySelector('.preset-model-cache-type-v')?.value;
+        addIfSet('cacheTypeV', cacheTypeVVal);
+
+        const mlockVal = editor.querySelector('.preset-model-mlock')?.checked;
+        if (mlockVal) modelConfig.mlock = true;
+
+        const mmapVal = editor.querySelector('.preset-model-mmap')?.checked;
+        if (mmapVal !== false && mmapVal !== undefined) modelConfig.mmap = mmapVal;
+
+        const cachePromptVal = editor.querySelector('.preset-model-cache-prompt')?.checked;
+        if (cachePromptVal) modelConfig.cachePrompt = true;
+
+        const loadMmprojVal = editor.querySelector('.preset-model-load-mmproj')?.checked;
+        if (loadMmprojVal) modelConfig.loadMmproj = true;
+
+        // Generation parameters
+        const tempVal = parseFloat(editor.querySelector('.preset-model-temp')?.value);
+        addIfSet('temp', tempVal);
+
+        const topKVal = parseInt(editor.querySelector('.preset-model-top-k')?.value);
+        addIfSet('topK', topKVal);
+
+        const topPVal = parseFloat(editor.querySelector('.preset-model-top-p')?.value);
+        addIfSet('topP', topPVal);
+
+        const minPVal = parseFloat(editor.querySelector('.preset-model-min-p')?.value);
+        addIfSet('minP', minPVal);
+
+        const repeatPenaltyVal = parseFloat(editor.querySelector('.preset-model-repeat-penalty')?.value);
+        addIfSet('repeatPenalty', repeatPenaltyVal);
+
+        const presencePenaltyVal = parseFloat(editor.querySelector('.preset-model-presence-penalty')?.value);
+        addIfSet('presencePenalty', presencePenaltyVal);
+
+        models.push(modelConfig);
+    }
+
+    if (hasError || models.length === 0) {
+        showToast('Please add at least one model with identifier and path', 'error');
+        return;
+    }
+
+    const presetData = {
+        name,
+        description,
+        models,
+    };
+
+    try {
+        const url = currentEditingPresetId
+            ? `/api/presets/${currentEditingPresetId}`
+            : '/api/presets';
+        const method = currentEditingPresetId ? 'PUT' : 'POST';
+
+        const res = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(presetData),
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+
+        showToast(currentEditingPresetId ? 'Preset updated!' : 'Preset created!', 'success');
+        closePresetModal();
+        refreshPresets();
+    } catch (err) {
+        showToast('Failed to save: ' + err.message, 'error');
+    }
+}
+
+async function deletePreset(id, name) {
+    if (!confirm(`Delete preset "${name}"? This cannot be undone.`)) return;
+
+    try {
+        const res = await fetch(`/api/presets/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        showToast('Preset deleted', 'success');
+        refreshPresets();
+    } catch (err) {
+        showToast('Delete failed: ' + err.message, 'error');
+    }
 }
 
 // ============ Init ============

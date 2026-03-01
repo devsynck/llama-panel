@@ -1345,3 +1345,334 @@ select {
 #browse-modal .modal-content {
   width: 500px;
 }
+
+/* ============ Presets Page ============ */
+.active-preset-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--success-bg);
+  border: 1px solid var(--success-border);
+  border-radius: var(--radius);
+  padding: 14px 20px;
+  margin-bottom: 20px;
+}
+
+.active-preset-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.active-preset-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--success);
+}
+
+.active-preset-name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.active-preset-models {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.presets-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.preset-item {
+  background: var(--gradient-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  transition: all var(--transition);
+}
+
+.preset-item:hover {
+  border-color: var(--border-light);
+  box-shadow: var(--shadow-sm);
+}
+
+.preset-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.preset-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.preset-name {
+  font-weight: 600;
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
+.preset-description {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.preset-meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.preset-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.preset-models-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.preset-model-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+}
+
+.preset-model-identifier {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  color: var(--accent-hover);
+}
+
+.preset-model-path {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 150px;
+}
+
+.preset-model-item svg {
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
+}
+
+.preset-model-identifier {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  color: var(--accent-hover);
+}
+
+.preset-model-path {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Preset Modal */
+.preset-modal-content {
+  width: 800px;
+  max-width: 95vw;
+  max-height: 90vh;
+}
+
+.preset-modal-body {
+  padding: 20px 24px;
+  overflow-y: auto;
+  max-height: calc(85vh - 70px);
+}
+
+.preset-form-section {
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.preset-form-section:last-of-type {
+  border-bottom: none;
+}
+
+.preset-form-section h4 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 14px;
+}
+
+.preset-models-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.preset-model-editor-item {
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.preset-model-editor-item .form-group {
+  margin: 0;
+}
+
+.preset-model-editor-item label {
+  font-size: 0.72rem;
+  margin-bottom: 4px;
+}
+
+.preset-model-editor-item input,
+.preset-model-editor-item select {
+  font-size: 0.8rem;
+  padding: 8px 10px;
+}
+
+/* Model editor header row */
+.preset-model-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.preset-model-header .form-group {
+  flex: 1;
+}
+
+.preset-model-header .form-group:first-child {
+  flex: 1;
+}
+
+.preset-model-header .form-group:nth-child(2) {
+  flex: 2;
+}
+
+/* Model config sections */
+.preset-model-config {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.preset-model-config-section {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(99, 102, 241, 0.05);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--transition);
+}
+
+.preset-model-config-section:hover {
+  background: rgba(99, 102, 241, 0.1);
+}
+
+.preset-model-config-section svg {
+  width: 16px;
+  height: 16px;
+  transition: transform var(--transition);
+}
+
+.preset-model-config-section.expanded svg {
+  transform: rotate(90deg);
+}
+
+.preset-model-config-section span {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.preset-model-config-fields {
+  grid-column: 1 / -1;
+  display: none;
+  padding-top: 4px;
+}
+
+.preset-model-config-fields.expanded {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.btn-add-model {
+  align-self: flex-start;
+  margin-top: 8px;
+}
+
+.btn-remove-model {
+  padding: 8px;
+  margin-top: 18px;
+}
+
+.preset-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* Checkbox styling in preset form */
+.preset-model-config-fields input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.preset-model-config-fields label:has(input[type="checkbox"]) {
+  cursor: pointer;
+  user-select: none;
+}
+
+/* Checkbox row - spans full width to force second row */
+.preset-model-config-fields .checkbox-row {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 24px;
+  padding-top: 4px;
+}
+
+.preset-model-config-fields .checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
+.preset-model-config-fields .checkbox-label span {
+  font-weight: 400;
+  color: var(--text-secondary);
+}
