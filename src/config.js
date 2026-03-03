@@ -21,8 +21,8 @@ const DEFAULT_CONFIG = {
   mlock: false,
   mmap: false,
   cachePrompt: false,
-  metrics: false,
-  slots: false,
+  metrics: true,
+  slots: true,
   cacheTypeK: '',
   cacheTypeV: '',
   splitMode: '',
@@ -41,6 +41,10 @@ const DEFAULT_CONFIG = {
   activePresetId: null,
   // Logging options
   logDisable: true,
+  // Advanced server features
+  jinja: false,
+  enableProps: false,
+  sleepIdleSeconds: 0,
 };
 
 function ensureDirs() {

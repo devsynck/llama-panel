@@ -2,3 +2,4 @@ node_modules/
 dist/
 *.log
 llama-help.txt
+LLAMA_SERVER_API.md

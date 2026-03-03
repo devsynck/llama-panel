@@ -176,6 +176,10 @@ class PresetManager {
         // Check if a value should be skipped (only skip problematic defaults)
         const shouldSkip = (key, value) => {
             if (value === undefined || value === null || value === '') return true;
+            // Skip cache types when set to "none" (let llama-server use default)
+            if ((key === 'cacheTypeK' || key === 'cacheTypeV') && value === 'none') {
+                return true;
+            }
             // Only skip if it's one of the problematic defaults
             if (key in PROBLEMATIC_DEFAULTS && value === PROBLEMATIC_DEFAULTS[key]) {
                 return true;
@@ -238,7 +242,7 @@ class PresetManager {
                 }
             }
 
-            // Write generation parameters - always write if set (no problematic defaults here)
+            // Write generation parameters - always write if set
             for (const [key, iniKey] of Object.entries({
                 temp: 'temperature',
                 topK: 'top-k',
@@ -252,6 +256,12 @@ class PresetManager {
                     ini += `${iniKey} = ${value}\n`;
                 }
             }
+
+            // Thinking mode via chat-template-kwargs (requires --jinja)
+            // Ref: https://unsloth.ai/docs/models/qwen3.5#how-to-enable-or-disable-reasoning-and-thinking
+            // CLI: --chat-template-kwargs '{"enable_thinking":false}'
+            if (model.thinking === true) ini += `chat-template-kwargs = {"enable_thinking":true}\n`;
+            if (model.thinking === false) ini += `chat-template-kwargs = {"enable_thinking":false}\n`;
 
             ini += '\n';
         }

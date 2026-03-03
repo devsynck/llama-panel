@@ -160,10 +160,18 @@ function updateDashboard(data) {
 
     // Speed / Throughput
     const speedVal = document.getElementById('stat-speed-value');
-    if (data.metrics && data.metrics.predicted_tokens_seconds !== undefined && data.metrics.predicted_tokens_seconds > 0) {
-        speedVal.textContent = `${data.metrics.predicted_tokens_seconds.toFixed(2)} t/s`;
-    } else if (data.health && data.health.tokens_per_second !== undefined && data.health.tokens_per_second > 0) {
-        speedVal.textContent = `${data.health.tokens_per_second.toFixed(2)} t/s`;
+    if (data.metrics) {
+        // llama-server Prometheus: tokens_predicted_seconds = t/s throughput
+        const tps = data.metrics.tokens_predicted_seconds ||
+            data.metrics.predicted_tokens_seconds ||
+            data.metrics.t_token_generation_mean;
+        if (tps !== undefined && tps > 0) {
+            speedVal.textContent = `${tps.toFixed(2)} t/s`;
+        } else if (data.health && data.health.tokens_per_second > 0) {
+            speedVal.textContent = `${data.health.tokens_per_second.toFixed(2)} t/s`;
+        } else {
+            speedVal.textContent = '—';
+        }
     } else {
         speedVal.textContent = '—';
     }
@@ -205,8 +213,61 @@ function updateDashboard(data) {
     // Health detail
     updateHealthDetail(data.health, data.metrics);
 
-    // Current model
-    updateCurrentModel(data.config);
+    // KV Cache
+    const kvVal = document.getElementById('stat-kv-value');
+    const kvTokens = document.getElementById('stat-kv-tokens');
+    const kvBarFill = document.getElementById('kv-bar-fill');
+    if (kvVal && data.metrics && data.metrics.kv_cache_usage_ratio !== undefined) {
+        const ratio = data.metrics.kv_cache_usage_ratio;
+        const pct = (ratio * 100).toFixed(1);
+        kvVal.textContent = `${pct}%`;
+        if (kvBarFill) {
+            kvBarFill.style.width = `${Math.min(pct, 100)}%`;
+            kvBarFill.className = 'kv-bar-fill' +
+                (ratio > 0.85 ? ' kv-bar-danger' : ratio > 0.6 ? ' kv-bar-warn' : '');
+        }
+        // token count key is kv_cache_tokens_count in Prometheus output
+        const tokCount = data.metrics.kv_cache_tokens_count ?? data.metrics.kv_cache_tokens;
+        if (kvTokens && tokCount !== undefined) {
+            kvTokens.textContent = `${Math.round(tokCount).toLocaleString()} tokens`;
+        } else if (kvTokens) {
+            kvTokens.textContent = '';
+        }
+    } else if (kvVal) {
+        kvVal.textContent = '—';
+        if (kvBarFill) kvBarFill.style.width = '0%';
+        if (kvTokens) kvTokens.textContent = '';
+    }
+
+    // Requests processing / deferred
+    const reqProcessing = document.getElementById('stat-req-processing');
+    const reqDeferred = document.getElementById('stat-req-deferred');
+    if (reqProcessing && data.metrics) {
+        const proc = data.metrics.requests_processing;
+        const deferred = data.metrics.requests_deferred;
+        reqProcessing.textContent = proc !== undefined ? `${Math.round(proc)} active` : '—';
+        if (reqDeferred && deferred !== undefined) {
+            reqDeferred.textContent = deferred > 0 ? `${Math.round(deferred)} queued` : '';
+        }
+    } else if (reqProcessing) {
+        reqProcessing.textContent = '—';
+    }
+
+    // Total tokens lifetime
+    const totalGen = document.getElementById('stat-total-gen');
+    const totalPrompt = document.getElementById('stat-total-prompt');
+    if (totalGen && data.metrics && data.metrics.tokens_predicted_total !== undefined) {
+        totalGen.textContent = formatNumber(data.metrics.tokens_predicted_total) + ' gen';
+        if (totalPrompt && data.metrics.prompt_tokens_total !== undefined) {
+            totalPrompt.textContent = formatNumber(data.metrics.prompt_tokens_total) + ' prompt';
+        }
+    } else if (totalGen) {
+        totalGen.textContent = '—';
+        if (totalPrompt) totalPrompt.textContent = '';
+    }
+
+    // Active Models from /v1/models
+    updateActiveModels(data.activeModels);
 }
 
 function updateSlotsDetail(slots) {
@@ -296,13 +357,105 @@ function updateHealthDetail(health, metrics) {
   `).join('');
 }
 
-function updateCurrentModel(cfg) {
+function updateServerConfig(data) {
     const container = document.getElementById('current-model-info');
-    if (!cfg || !cfg.modelPath) {
+    if (!data) {
         container.innerHTML = '<div class="empty-state">No model loaded</div>';
         return;
     }
-    container.innerHTML = `<div class="model-path-display">${cfg.modelPath}</div>`;
+
+    // Check if we're in preset mode with active preset data
+    if (data.activePreset && data.activePreset.models && data.activePreset.models.length > 0) {
+        const preset = data.activePreset;
+        let html = `<div class="preset-header">`;
+        html += `<div class="preset-title">📋 Active Preset: ${escapeHtml(preset.name)}</div>`;
+        if (preset.description) {
+            html += `<div class="preset-description">${escapeHtml(preset.description)}</div>`;
+        }
+        html += `</div>`;
+
+        // Display each model with its configuration
+        for (const model of preset.models) {
+            html += `<div class="preset-model-item">`;
+            html += `<div class="preset-model-header">${escapeHtml(model.identifier)}</div>`;
+            html += `<div class="preset-model-detail">`;
+            html += `<span class="model-detail-label">Path:</span> `;
+            html += `<span class="model-detail-value">${escapeHtml(shortenPath(model.modelPath))}</span>`;
+            html += `</div>`;
+
+            // Build configuration details
+            const configDetails = [];
+
+            // Model configuration
+            if (model.ctxSize) configDetails.push(`Ctx: ${model.ctxSize}`);
+            if (model.gpuLayers !== undefined && model.gpuLayers !== '') configDetails.push(`GPU Layers: ${model.gpuLayers}`);
+            if (model.threads && model.threads > 0) configDetails.push(`Threads: ${model.threads}`);
+            if (model.cacheTypeK) configDetails.push(`Cache K: ${model.cacheTypeK}`);
+            if (model.cacheTypeV) configDetails.push(`Cache V: ${model.cacheTypeV}`);
+            if (model.flashAttn) configDetails.push(`Flash Attn: on`);
+            if (model.contBatching) configDetails.push(`Cont. Batching: on`);
+            if (model.mmap) configDetails.push(`MMap: on`);
+            if (model.mlock) configDetails.push(`MLock: on`);
+            if (model.cachePrompt) configDetails.push(`Prompt Cache: on`);
+
+            // Generation parameters
+            const genParams = [];
+            if (model.temp !== undefined) genParams.push(`Temp: ${model.temp}`);
+            if (model.topK) genParams.push(`Top K: ${model.topK}`);
+            if (model.topP) genParams.push(`Top P: ${model.topP}`);
+            if (model.minP) genParams.push(`Min P: ${model.minP}`);
+            if (model.repeatPenalty) genParams.push(`Rep. Pen: ${model.repeatPenalty}`);
+
+            if (configDetails.length > 0) {
+                html += `<div class="preset-model-detail">`;
+                html += `<span class="model-detail-label">Config:</span> `;
+                html += `<span class="model-detail-value">${configDetails.join(' | ')}</span>`;
+                html += `</div>`;
+            }
+
+            if (genParams.length > 0) {
+                html += `<div class="preset-model-detail">`;
+                html += `<span class="model-detail-label">Generation:</span> `;
+                html += `<span class="model-detail-value">${genParams.join(' | ')}</span>`;
+                html += `</div>`;
+            }
+
+            if (model.mmprojPath) {
+                html += `<div class="preset-model-detail">`;
+                html += `<span class="model-detail-label">Vision:</span> `;
+                html += `<span class="model-detail-value">${escapeHtml(shortenPath(model.mmprojPath))}</span>`;
+                html += `</div>`;
+            }
+
+            // Effective args for this model
+            const modelArgs = data.effectiveArgsByModel && data.effectiveArgsByModel[model.identifier];
+            if (modelArgs) {
+                html += `<div class="server-args-strip">`;
+                html += `<span class="server-args-label">Args</span>`;
+                html += `<code class="server-args-value">${escapeHtml(modelArgs)}</code>`;
+                html += `</div>`;
+            }
+
+            html += `</div>`;
+        }
+
+
+        container.innerHTML = html;
+    } else if (data.config && data.config.modelPath) {
+        // Single model mode
+        let html = `<div class="model-path-display">${escapeHtml(data.config.modelPath)}</div>`;
+
+        if (data.serverArgs) {
+            html += `<div class="server-args-strip">`;
+            html += `<span class="server-args-label">Server Args</span>`;
+            html += `<code class="server-args-value">${escapeHtml(data.serverArgs)}</code>`;
+            html += `</div>`;
+        }
+
+        container.innerHTML = html;
+    } else {
+        container.innerHTML = '<div class="empty-state">No model loaded</div>';
+    }
 }
 
 // ============ Server Control ============
@@ -371,9 +524,9 @@ async function loadConfig() {
 function populateConfigForm(cfg) {
     // Text/number inputs
     const fields = [
-        'host', 'port', 'ctxSize', 'threads', 'threadsBatch',
-        'batchSize', 'ubatchSize', 'gpuLayers', 'parallel', 'apiKey',
-        'extraArgs', 'modelsDir', 'managerPort', 'modelsPresetPath'
+        'host', 'port', 'apiKey',
+        'extraArgs', 'modelsDir', 'managerPort', 'modelsPresetPath',
+        'parallel', 'sleepIdleSeconds'
     ];
     for (const field of fields) {
         const el = document.getElementById(`cfg-${field}`);
@@ -382,27 +535,14 @@ function populateConfigForm(cfg) {
         }
     }
 
-    // Selects
-    const selects = ['flashAttn', 'cacheTypeK', 'cacheTypeV', 'splitMode'];
-    for (const field of selects) {
-        const el = document.getElementById(`cfg-${field}`);
-        if (el && cfg[field] !== undefined) {
-            el.value = cfg[field];
-        }
-    }
-
     // Checkboxes
-    const toggles = ['contBatching', 'mlock', 'mmap', 'cachePrompt', 'metrics', 'slots', 'usePresetMode', 'logDisable'];
+    const toggles = ['contBatching', 'mlock', 'mmap', 'cachePrompt', 'metrics', 'slots',
+        'usePresetMode', 'logDisable', 'jinja', 'enableProps'];
     for (const field of toggles) {
         const el = document.getElementById(`cfg-${field}`);
         if (el && cfg[field] !== undefined) {
             el.checked = cfg[field];
         }
-    }
-
-    // Populate the dropdown with models
-    if (cfg.modelPath !== undefined) {
-        refreshModelSelect(cfg.modelPath);
     }
 }
 
@@ -410,24 +550,12 @@ async function saveConfig() {
     const cfg = {
         host: document.getElementById('cfg-host').value,
         port: parseInt(document.getElementById('cfg-port').value) || 8080,
-        modelPath: document.getElementById('cfg-modelPath').value,
-        ctxSize: parseInt(document.getElementById('cfg-ctxSize').value) || 4096,
-        threads: parseInt(document.getElementById('cfg-threads').value) || -1,
-        threadsBatch: parseInt(document.getElementById('cfg-threadsBatch').value) || -1,
-        batchSize: parseInt(document.getElementById('cfg-batchSize').value) || 2048,
-        ubatchSize: parseInt(document.getElementById('cfg-ubatchSize').value) || 512,
-        gpuLayers: document.getElementById('cfg-gpuLayers').value || 'auto',
-        flashAttn: document.getElementById('cfg-flashAttn').value,
-        parallel: parseInt(document.getElementById('cfg-parallel').value) || 1,
         contBatching: document.getElementById('cfg-contBatching').checked,
         mlock: document.getElementById('cfg-mlock').checked,
         mmap: document.getElementById('cfg-mmap').checked,
         cachePrompt: document.getElementById('cfg-cachePrompt').checked,
         metrics: document.getElementById('cfg-metrics').checked,
         slots: document.getElementById('cfg-slots').checked,
-        cacheTypeK: document.getElementById('cfg-cacheTypeK').value,
-        cacheTypeV: document.getElementById('cfg-cacheTypeV').value,
-        splitMode: document.getElementById('cfg-splitMode').value,
         apiKey: document.getElementById('cfg-apiKey').value,
         extraArgs: document.getElementById('cfg-extraArgs').value,
         modelsDir: document.getElementById('cfg-modelsDir').value,
@@ -435,6 +563,10 @@ async function saveConfig() {
         usePresetMode: document.getElementById('cfg-usePresetMode').checked,
         modelsPresetPath: document.getElementById('cfg-modelsPresetPath').value,
         logDisable: document.getElementById('cfg-logDisable').checked,
+        parallel: parseInt(document.getElementById('cfg-parallel')?.value) || 1,
+        sleepIdleSeconds: parseInt(document.getElementById('cfg-sleepIdleSeconds')?.value) || 0,
+        jinja: document.getElementById('cfg-jinja')?.checked || false,
+        enableProps: document.getElementById('cfg-enableProps')?.checked || false,
     };
 
     try {
@@ -459,79 +591,12 @@ function browseDirectory() {
         .then(data => {
             if (data.path) {
                 document.getElementById('cfg-modelsDir').value = data.path;
-                // Also save config so backend knows about the new directory for scanning
-                saveConfig().then(() => refreshModelSelect());
+                // Also save config so backend knows about the new directory
+                saveConfig();
             }
         })
         .catch(err => {
             showToast('Failed to open folder picker: ' + err.message, 'error');
-        });
-}
-
-function refreshModelSelect(selectedPath = null) {
-    const select = document.getElementById('cfg-modelPath');
-    const prevValue = selectedPath || select.value;
-
-    select.innerHTML = '<option value="">Scanning...</option>';
-    select.disabled = true;
-
-    fetch('/api/models')
-        .then(r => r.json())
-        .then(models => {
-            select.disabled = false;
-
-            if (models.length === 0) {
-                select.innerHTML = '<option value="">No models found in Models Directory</option>';
-                return;
-            }
-
-            // Auto-heal logic: if prevValue looks like stripped backslashes, see if there's a match by name
-            let healedPrevValue = prevValue;
-            if (prevValue && !models.some(m => m.path === prevValue)) {
-                const likelyFileName = shortenPath(prevValue).replace(/^.*C:Users.*lama/, '');
-                const found = models.find(m => m.name === likelyFileName || prevValue.endsWith(m.name));
-                if (found) {
-                    healedPrevValue = found.path;
-                    // Proactively save to fix the server state
-                    setTimeout(() => saveConfig(), 500);
-                }
-            }
-
-            // Group by folder/legacy for better organization
-            const grouped = {};
-            for (const model of models) {
-                if (model.isLegacy) {
-                    if (!grouped['Legacy (Flat)']) grouped['Legacy (Flat)'] = [];
-                    grouped['Legacy (Flat)'].push(model);
-                } else {
-                    if (!grouped['Organized']) grouped['Organized'] = [];
-                    grouped['Organized'].push(model);
-                }
-            }
-
-            let html = '<option value="">— Select a Model —</option>';
-            for (const [group, groupModels] of Object.entries(grouped)) {
-                html += `<optgroup label="${group}">`;
-                for (const m of groupModels) {
-                    const label = m.isSplit
-                        ? `${escapeHtml(m.name)} (Split: ${m.fileCount} files)`
-                        : escapeHtml(m.name);
-                    const isSelected = m.path === healedPrevValue ? 'selected' : '';
-                    html += `<option value="${escapeHtml(m.path)}" ${isSelected}>${label} (${m.sizeHuman})</option>`;
-                }
-                html += '</optgroup>';
-            }
-
-            // If it STILL isn't found even after healing attempt
-            if (healedPrevValue && !models.some(m => m.path === healedPrevValue)) {
-                html += `<option value="${escapeHtml(healedPrevValue)}" selected>⚠️ ${escapeHtml(shortenPath(healedPrevValue))} (Not Found in Dir)</option>`;
-            }
-
-            select.innerHTML = html;
-        })
-        .catch(err => {
-            select.disabled = false;
-            select.innerHTML = `<option value="">Error loading models: ${err.message}</option>`;
         });
 }
 
@@ -847,10 +912,159 @@ function escapeHtml(str) {
         .replace(/'/g, '&#39;');
 }
 
+// ============ Active Models Panel ============
+
+function updateActiveModels(activeModels) {
+    const card = document.getElementById('active-models-card');
+    const list = document.getElementById('active-models-list');
+    const badge = document.getElementById('active-models-badge');
+    if (!card || !list) return;
+
+    if (!activeModels || activeModels.length === 0) {
+        card.style.display = 'none';
+        return;
+    }
+
+    card.style.display = 'block';
+    if (badge) badge.textContent = activeModels.length;
+
+    list.innerHTML = activeModels.map(m => `
+        <div class="active-model-item">
+            <div class="active-model-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                </svg>
+            </div>
+            <div class="active-model-info">
+                <span class="active-model-id">${escapeHtml(m.id)}</span>
+                <span class="active-model-meta">${escapeHtml(m.owned_by || 'llamacpp')}</span>
+            </div>
+            <span class="active-model-status">● live</span>
+        </div>
+    `).join('');
+}
+
+// ============ Live Props ============
+
+function showPropsModal() {
+    const modal = document.getElementById('props-modal');
+    if (!modal) return;
+
+    // Reset thinking radio to default
+    const thinkingDefault = document.getElementById('props-thinking-default');
+    if (thinkingDefault) thinkingDefault.checked = true;
+
+    // Pre-fill with current props if available
+    const props = currentStatus.props;
+    if (props) {
+        const sysprompt = document.getElementById('props-system-prompt');
+        const assistantName = document.getElementById('props-assistant-name');
+        if (sysprompt && props.default_generation_settings?.system_prompt !== undefined) {
+            sysprompt.value = props.default_generation_settings.system_prompt || '';
+        }
+        if (assistantName && props.assistant_name) {
+            assistantName.value = props.assistant_name;
+        }
+        // Restore thinking state from current props
+        if (props.enable_thinking === true && document.getElementById('props-thinking-on')) document.getElementById('props-thinking-on').checked = true;
+        if (props.enable_thinking === false && document.getElementById('props-thinking-off')) document.getElementById('props-thinking-off').checked = true;
+    }
+
+    // Show notice if --props isn't enabled
+    const notice = document.getElementById('props-notice');
+    if (notice) {
+        const enableProps = currentStatus.config?.enableProps;
+        notice.style.display = enableProps ? 'none' : 'flex';
+    }
+
+    modal.style.display = 'flex';
+}
+
+function closePropsModal() {
+    const modal = document.getElementById('props-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function applyProps() {
+    const btn = document.getElementById('btn-apply-props');
+    const systemPrompt = document.getElementById('props-system-prompt')?.value;
+    const assistantName = document.getElementById('props-assistant-name')?.value;
+    const thinkingRadio = document.querySelector('input[name="props-thinking"]:checked')?.value;
+
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Applying...'; }
+
+    try {
+        const payload = {};
+        if (systemPrompt !== undefined) payload.system_prompt = systemPrompt;
+        if (assistantName) payload.assistant_name = assistantName;
+
+        // Send enable_thinking top-level (direct API compat)
+        // AND as chat_template_kwargs (what llama-server /props understands for Jinja templates)
+        // Ref: https://unsloth.ai/docs/models/qwen3.5#how-to-enable-or-disable-reasoning-and-thinking
+        if (thinkingRadio === 'true' || thinkingRadio === 'false') {
+            const val = thinkingRadio === 'true';
+            payload.enable_thinking = val;
+            payload.chat_template_kwargs = { enable_thinking: val };
+        }
+        // 'default' = omit entirely
+
+        const res = await fetch('/api/props', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        showToast('Prompt injected successfully!', 'success');
+        closePropsModal();
+    } catch (err) {
+        showToast('Failed: ' + err.message, 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="20 6 9 17 4 12"/></svg> Apply Now';
+        }
+    }
+}
+
 // ============ Presets ============
 
 let currentEditingPresetId = null;
 let availableModelsForPreset = [];
+
+function calculateTotalPresetSize(models, modelSizes) {
+    let totalBytes = 0;
+    const sizes = [];
+
+    models.forEach(m => {
+        const sizeStr = modelSizes.get(m.modelPath);
+        if (sizeStr && sizeStr !== '—') {
+            // Parse human-readable size back to bytes
+            const match = sizeStr.match(/^([\d.]+)\s*(B|KB|MB|GB)$/i);
+            if (match) {
+                const value = parseFloat(match[1]);
+                const unit = match[2].toUpperCase();
+                const multipliers = { 'B': 1, 'KB': 1024, 'MB': 1024 * 1024, 'GB': 1024 * 1024 * 1024 };
+                totalBytes += value * multipliers[unit];
+            }
+        }
+    });
+
+    // Convert total bytes to human-readable format
+    if (totalBytes === 0) {
+        return 'Unknown';
+    }
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let unitIndex = 0;
+    let sizeValue = totalBytes;
+
+    while (sizeValue >= 1024 && unitIndex < units.length - 1) {
+        sizeValue /= 1024;
+        unitIndex++;
+    }
+
+    return `${sizeValue.toFixed(sizeValue < 10 ? 2 : 1)} ${units[unitIndex]}`;
+}
 
 async function refreshPresets() {
     const container = document.getElementById('presets-list');
@@ -858,14 +1072,22 @@ async function refreshPresets() {
     container.innerHTML = '<div class="empty-state">Loading presets...</div>';
 
     try {
-        // Load presets and config in parallel
-        const [presetsRes, configRes] = await Promise.all([
+        // Load presets, config and models in parallel
+        const [presetsRes, configRes, modelsRes] = await Promise.all([
             fetch('/api/presets'),
             fetch('/api/config'),
+            fetch('/api/models'),
         ]);
 
         const presets = await presetsRes.json();
         const cfg = await configRes.json();
+        const models = await modelsRes.json();
+
+        // Create a map of model paths to their size info for quick lookup
+        const modelSizes = new Map();
+        models.forEach(m => {
+            modelSizes.set(m.path, m.sizeHuman);
+        });
 
         // Update active preset banner
         if (cfg.usePresetMode && cfg.activePresetId) {
@@ -918,6 +1140,7 @@ async function refreshPresets() {
           <div class="preset-meta">
             <span>📅 ${new Date(p.updatedAt).toLocaleDateString()}</span>
             <span>🧠 ${p.models.length} model${p.models.length > 1 ? 's' : ''}</span>
+            <span>💾 ${calculateTotalPresetSize(p.models, modelSizes)}</span>
           </div>
           <div class="preset-models-list">
             ${p.models.map(m => {
@@ -928,12 +1151,18 @@ async function refreshPresets() {
                 if (m.topP && m.topP !== 0.95) params.push(`top_p:${m.topP}`);
                 const paramsStr = params.length > 0 ? `<span style="color:var(--text-dim);font-size:0.75rem;margin-left:8px;">(${params.join(', ')})</span>` : '';
 
+                // Look up model size from available models
+                const size = modelSizes.get(m.modelPath) || '—';
+
                 return `
               <div class="preset-model-item">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-                </svg>
-                <span class="preset-model-identifier">${escapeHtml(m.identifier)}</span>
+                <div style="display:flex;align-items:center;gap:8px;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                  </svg>
+                  <span class="preset-model-identifier" style="font-weight:500;">${escapeHtml(m.identifier)}</span>
+                  <span style="color:var(--text-dim);font-size:0.85rem;">📦 ${size}</span>
+                </div>
                 ${paramsStr}
               </div>
             `;
@@ -1126,22 +1355,27 @@ async function addPresetModel(existingModel = null) {
                 <div class="form-group">
                     <label>Cache Type K</label>
                     <select class="preset-model-cache-type-k">
-                        <option value="" ${!val('cacheTypeK') ? 'selected' : ''}>Default (f16)</option>
-                        <option value="f16" ${val('cacheTypeK') === 'f16' ? 'selected' : ''}>f16</option>
-                        <option value="f32" ${val('cacheTypeK') === 'f32' ? 'selected' : ''}>f32</option>
+                        <option value="none" ${!val('cacheTypeK') || val('cacheTypeK') === 'none' ? 'selected' : ''}>default (f16) — slow</option>
+                        <option value="q4_0" ${val('cacheTypeK') === 'q4_0' ? 'selected' : ''}>q4_0 — recommended ⚡</option>
+                        <option value="q8_0" ${val('cacheTypeK') === 'q8_0' ? 'selected' : ''}>q8_0 — balanced</option>
+                        <option value="f16" ${val('cacheTypeK') === 'f16' ? 'selected' : ''}>f16 — full precision</option>
                         <option value="bf16" ${val('cacheTypeK') === 'bf16' ? 'selected' : ''}>bf16</option>
-                        <option value="q8_0" ${val('cacheTypeK') === 'q8_0' ? 'selected' : ''}>q8_0</option>
+                        <option value="f32" ${val('cacheTypeK') === 'f32' ? 'selected' : ''}>f32</option>
                     </select>
                 </div>
                 <div class="form-group">
                     <label>Cache Type V</label>
                     <select class="preset-model-cache-type-v">
-                        <option value="" ${!val('cacheTypeV') ? 'selected' : ''}>Default (f16)</option>
-                        <option value="f16" ${val('cacheTypeV') === 'f16' ? 'selected' : ''}>f16</option>
-                        <option value="f32" ${val('cacheTypeV') === 'f32' ? 'selected' : ''}>f32</option>
+                        <option value="none" ${!val('cacheTypeV') || val('cacheTypeV') === 'none' ? 'selected' : ''}>default (f16) — slow</option>
+                        <option value="q4_0" ${val('cacheTypeV') === 'q4_0' ? 'selected' : ''}>q4_0 — recommended ⚡</option>
+                        <option value="q8_0" ${val('cacheTypeV') === 'q8_0' ? 'selected' : ''}>q8_0 — balanced</option>
+                        <option value="f16" ${val('cacheTypeV') === 'f16' ? 'selected' : ''}>f16 — full precision</option>
                         <option value="bf16" ${val('cacheTypeV') === 'bf16' ? 'selected' : ''}>bf16</option>
-                        <option value="q8_0" ${val('cacheTypeV') === 'q8_0' ? 'selected' : ''}>q8_0</option>
+                        <option value="f32" ${val('cacheTypeV') === 'f32' ? 'selected' : ''}>f32</option>
                     </select>
+                </div>
+                <div class="kv-cache-hint">
+                    ⚡ <strong>q4_0</strong> reduces KV cache VRAM by ~4× — critical for large context (32k+). Requires Flash Attention.
                 </div>
                 <!-- Second row: Checkboxes -->
                 <div class="checkbox-row">
@@ -1195,6 +1429,16 @@ async function addPresetModel(existingModel = null) {
                 <div class="form-group">
                     <label>Presence Penalty</label>
                     <input type="number" step="0.1" min="0" class="preset-model-presence-penalty" value="${valStr('presencePenalty')}" placeholder="0.0">
+                </div>
+                <!-- Thinking Mode -->
+                <div class="form-group full-width" style="grid-column:1/-1;">
+                    <label>🧠 Thinking Mode</label>
+                    <select class="preset-model-thinking">
+                        <option value="" ${!val('thinking') && val('thinking') !== false ? 'selected' : ''}>Default (model decides)</option>
+                        <option value="true" ${val('thinking') === true || val('thinking') === 'true' ? 'selected' : ''}>Enabled — show chain of thought</option>
+                        <option value="false" ${val('thinking') === false || val('thinking') === 'false' ? 'selected' : ''}>Disabled — no thinking tokens</option>
+                    </select>
+                    <small>Writes <code>chat-template-kwargs = {"enable_thinking":false}</code> to the INI. Requires <strong>Jinja2 (--jinja)</strong> in Configuration → Advanced. For live switching, use the ⚡ Inject Prompt button.</small>
                 </div>
             </div>
         </div>
@@ -1306,6 +1550,12 @@ async function savePreset() {
 
         const presencePenaltyVal = parseFloat(editor.querySelector('.preset-model-presence-penalty')?.value);
         addIfSet('presencePenalty', presencePenaltyVal);
+
+        // Thinking mode (tri-state: '' = default, 'true' = on, 'false' = off)
+        const thinkingRaw = editor.querySelector('.preset-model-thinking')?.value;
+        if (thinkingRaw === 'true') modelConfig.thinking = true;
+        if (thinkingRaw === 'false') modelConfig.thinking = false;
+        // empty string = default, don't set
 
         models.push(modelConfig);
     }

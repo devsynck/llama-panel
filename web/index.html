@@ -94,6 +94,14 @@
         <div class="page-header">
           <h1>Dashboard</h1>
           <div class="server-controls">
+            <button id="btn-props" class="btn btn-secondary" onclick="showPropsModal()"
+              title="Live prompt injection (requires --props flag)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+              Inject Prompt
+            </button>
             <button id="btn-start" class="btn btn-success" onclick="startServer()">
               <svg viewBox="0 0 24 24" fill="currentColor" stroke="none" width="16" height="16">
                 <polygon points="5 3 19 12 5 21 5 3" />
@@ -174,6 +182,7 @@
           </div>
         </div>
 
+        <!-- Row 2: System stats + KV cache + requests -->
         <div class="stats-grid">
           <div class="stat-card" id="stat-ram">
             <div class="stat-icon ram-icon" style="background: var(--primary-bg); color: var(--primary);">
@@ -242,10 +251,60 @@
               </svg>
             </div>
             <div class="stat-info">
-              <span class="stat-label">GPU Temps & Power</span>
+              <span class="stat-label">GPU Temps &amp; Power</span>
               <span class="stat-value" id="stat-gpu-temp" style="font-size: 1.1rem">—</span>
               <span class="stat-value" id="stat-gpu-power"
                 style="font-size: 0.85rem; color: var(--text-muted); font-weight: 500;">—</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 3: KV Cache + Requests -->
+        <div class="stats-grid stats-grid-kv">
+          <div class="stat-card stat-card-wide" id="stat-kvcache">
+            <div class="stat-icon" style="background: rgba(20,184,166,0.12); color: #14b8a6;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <ellipse cx="12" cy="5" rx="9" ry="3" />
+                <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
+                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+              </svg>
+            </div>
+            <div class="stat-info kv-stat-info">
+              <span class="stat-label">KV Cache</span>
+              <div class="kv-bar-row">
+                <span class="stat-value" id="stat-kv-value" style="font-size:1.1rem">—</span>
+                <span class="stat-value" id="stat-kv-tokens"
+                  style="font-size:0.8rem;color:var(--text-muted);font-weight:500;"></span>
+              </div>
+              <div class="kv-bar-track">
+                <div class="kv-bar-fill" id="kv-bar-fill" style="width:0%"></div>
+              </div>
+            </div>
+          </div>
+          <div class="stat-card" id="stat-requests">
+            <div class="stat-icon" style="background: rgba(99,102,241,0.12); color: #818cf8;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+              </svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-label">Requests</span>
+              <span class="stat-value" id="stat-req-processing" style="font-size:1.1rem">—</span>
+              <span class="stat-value" id="stat-req-deferred"
+                style="font-size:0.8rem;color:var(--text-muted);font-weight:500;"></span>
+            </div>
+          </div>
+          <div class="stat-card" id="stat-total-tokens">
+            <div class="stat-icon" style="background: rgba(245,158,11,0.12); color: #f59e0b;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+              </svg>
+            </div>
+            <div class="stat-info">
+              <span class="stat-label">Total Generated</span>
+              <span class="stat-value" id="stat-total-gen" style="font-size:1.1rem">—</span>
+              <span class="stat-value" id="stat-total-prompt"
+                style="font-size:0.8rem;color:var(--text-muted);font-weight:500;"></span>
             </div>
           </div>
         </div>
@@ -266,13 +325,12 @@
           </div>
         </div>
 
-        <!-- Current Model -->
-        <div class="detail-card model-info-card">
-          <h3>Current Model</h3>
-          <div id="current-model-info" class="current-model-info">
-            <div class="empty-state">No model loaded</div>
-          </div>
+        <!-- Active Models (from /v1/models) -->
+        <div class="detail-card model-info-card" id="active-models-card" style="display:none;">
+          <h3>Active Models <span id="active-models-badge" class="active-models-badge"></span></h3>
+          <div id="active-models-list" class="active-models-list"></div>
         </div>
+
       </section>
 
       <!-- Configuration Page -->
@@ -324,8 +382,6 @@
                   <input type="text" id="cfg-modelsDir" placeholder="Path to folder containing .gguf models">
                   <button class="btn btn-sm btn-secondary" onclick="browseDirectory()" title="Browse for folder">📁
                     Browse</button>
-                  <button class="btn btn-sm btn-secondary" onclick="refreshModelSelect()"
-                    title="Scan directory for models">🔄 Scan</button>
                 </div>
                 <small>Set the folder where your .gguf model files are stored</small>
               </div>
@@ -338,104 +394,13 @@
                   </label>
                   <span>Enable preset mode for running multiple models simultaneously</span>
                 </div>
-                <small>When enabled, llama-server will use a preset INI file to load multiple models. Go to the Presets page to configure.</small>
+                <small>When enabled, llama-server will use a preset INI file to load multiple models. Go to the Presets
+                  page to configure.</small>
               </div>
               <div class="form-group full-width">
                 <label for="cfg-modelPresetPath">Preset INI File Path</label>
                 <input type="text" id="cfg-modelsPresetPath" placeholder="Auto-filled when activating a preset">
                 <small>This is automatically set when you activate a preset from the Presets page</small>
-              </div>
-              <div class="form-group full-width">
-                <label for="cfg-modelPath">Active Model</label>
-                <select id="cfg-modelPath">
-                  <option value="">— Set models directory and click Scan —</option>
-                </select>
-                <small>Select a model from your models directory to use with llama-server (not used in preset mode)</small>
-              </div>
-              <div class="form-group">
-                <label for="cfg-gpuLayers">GPU Layers</label>
-                <input type="text" id="cfg-gpuLayers" placeholder="auto">
-                <small>Number, 'auto', or 'all'</small>
-              </div>
-              <div class="form-group">
-                <label for="cfg-splitMode">Split Mode</label>
-                <select id="cfg-splitMode">
-                  <option value="layer">Layer</option>
-                  <option value="row">Row</option>
-                  <option value="none">None</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <!-- Context & Batching -->
-          <div class="config-section">
-            <h3>📐 Context & Batching</h3>
-            <div class="config-grid">
-              <div class="form-group">
-                <label for="cfg-ctxSize">Context Size</label>
-                <input type="number" id="cfg-ctxSize" placeholder="4096">
-              </div>
-              <div class="form-group">
-                <label for="cfg-batchSize">Batch Size</label>
-                <input type="number" id="cfg-batchSize" placeholder="2048">
-              </div>
-              <div class="form-group">
-                <label for="cfg-ubatchSize">Micro Batch Size</label>
-                <input type="number" id="cfg-ubatchSize" placeholder="512">
-              </div>
-              <div class="form-group">
-                <label for="cfg-parallel">Parallel Slots</label>
-                <input type="number" id="cfg-parallel" placeholder="1">
-              </div>
-            </div>
-          </div>
-
-          <!-- Performance -->
-          <div class="config-section">
-            <h3>⚡ Performance</h3>
-            <div class="config-grid">
-              <div class="form-group">
-                <label for="cfg-threads">Threads</label>
-                <input type="number" id="cfg-threads" placeholder="-1 (auto)">
-              </div>
-              <div class="form-group">
-                <label for="cfg-threadsBatch">Threads Batch</label>
-                <input type="number" id="cfg-threadsBatch" placeholder="-1 (auto)">
-              </div>
-              <div class="form-group">
-                <label for="cfg-flashAttn">Flash Attention</label>
-                <select id="cfg-flashAttn">
-                  <option value="auto">Auto</option>
-                  <option value="on">On</option>
-                  <option value="off">Off</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label for="cfg-cacheTypeK">KV Cache Type K</label>
-                <select id="cfg-cacheTypeK">
-                  <option value="f16">f16</option>
-                  <option value="f32">f32</option>
-                  <option value="bf16">bf16</option>
-                  <option value="q8_0">q8_0</option>
-                  <option value="q4_0">q4_0</option>
-                  <option value="q4_1">q4_1</option>
-                  <option value="q5_0">q5_0</option>
-                  <option value="q5_1">q5_1</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label for="cfg-cacheTypeV">KV Cache Type V</label>
-                <select id="cfg-cacheTypeV">
-                  <option value="f16">f16</option>
-                  <option value="f32">f32</option>
-                  <option value="bf16">bf16</option>
-                  <option value="q8_0">q8_0</option>
-                  <option value="q4_0">q4_0</option>
-                  <option value="q4_1">q4_1</option>
-                  <option value="q5_0">q5_0</option>
-                  <option value="q5_1">q5_1</option>
-                </select>
               </div>
             </div>
           </div>
@@ -504,6 +469,41 @@
               <input type="text" id="cfg-extraArgs" placeholder="e.g. --rope-scaling yarn --rope-freq-base 10000">
               <small>Any additional flags to pass to llama-server</small>
             </div>
+          </div>
+
+          <!-- Advanced Features -->
+          <div class="config-section">
+            <h3>⚡ Advanced Features</h3>
+            <div class="config-grid">
+              <div class="form-group">
+                <label for="cfg-parallel">Parallel Slots (-np)</label>
+                <input type="number" id="cfg-parallel" min="1" placeholder="1">
+                <small>Concurrent request slots (parallel decoding)</small>
+              </div>
+              <div class="form-group">
+                <label for="cfg-sleepIdleSeconds">Sleep Idle (seconds)</label>
+                <input type="number" id="cfg-sleepIdleSeconds" min="0" placeholder="0 = disabled">
+                <small>Unload model from memory after N seconds idle (0 = off)</small>
+              </div>
+            </div>
+            <div class="config-grid toggles-grid" style="margin-top:16px;">
+              <div class="toggle-group">
+                <label class="toggle">
+                  <input type="checkbox" id="cfg-jinja">
+                  <span class="toggle-slider"></span>
+                </label>
+                <span>Jinja2 Templates (<code>--jinja</code>)</span>
+              </div>
+              <div class="toggle-group">
+                <label class="toggle">
+                  <input type="checkbox" id="cfg-enableProps">
+                  <span class="toggle-slider"></span>
+                </label>
+                <span>Enable Live Props (<code>--props</code>)</span>
+              </div>
+            </div>
+            <small style="display:block;margin-top:10px;color:var(--text-dim);">Jinja is required for Anthropic
+              tool-use. Live Props enables runtime system prompt injection without restarting the server.</small>
           </div>
 
         </div>
@@ -669,6 +669,72 @@
 
   <!-- Toast container -->
   <div id="toast-container"></div>
+
+  <!-- Live Props Modal -->
+  <div id="props-modal" class="modal" style="display:none;">
+    <div class="modal-backdrop" onclick="closePropsModal()"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>&#x26A1; Live Prompt Injection</h3>
+        <button class="btn-close" onclick="closePropsModal()">&times;</button>
+      </div>
+      <div class="modal-body" style="padding:20px;display:flex;flex-direction:column;gap:16px;">
+        <div class="props-notice" id="props-notice" style="display:none;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <span>Server requires <code>--props</code> flag to accept live updates. Enable it in Advanced Features config
+            and restart the server.</span>
+        </div>
+        <div class="form-group">
+          <label for="props-system-prompt">System Prompt</label>
+          <textarea id="props-system-prompt" rows="8" placeholder="You are a helpful assistant..."
+            style="resize:vertical;"></textarea>
+          <small>Changes apply immediately without restarting (requires <code>--props</code> flag)</small>
+        </div>
+        <div class="form-group">
+          <label for="props-assistant-name">Assistant Name</label>
+          <input type="text" id="props-assistant-name" placeholder="assistant">
+        </div>
+        <div class="props-thinking-row">
+          <div class="props-thinking-label">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+              <path
+                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z" />
+            </svg>
+            <span>Enable Thinking <code>(enable_thinking)</code></span>
+            <span class="thinking-hint">For Qwen3 and other reasoning models. Controls chain-of-thought tokens per
+              request.</span>
+          </div>
+          <div class="thinking-tri-state">
+            <label class="thinking-opt">
+              <input type="radio" name="props-thinking" id="props-thinking-default" value="default" checked>
+              <span>Default</span>
+            </label>
+            <label class="thinking-opt">
+              <input type="radio" name="props-thinking" id="props-thinking-on" value="true">
+              <span>On &#x1F9E0;</span>
+            </label>
+            <label class="thinking-opt">
+              <input type="radio" name="props-thinking" id="props-thinking-off" value="false">
+              <span>Off &#x26A1;</span>
+            </label>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;">
+          <button class="btn btn-secondary" onclick="closePropsModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="applyProps()" id="btn-apply-props">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+            Apply Now
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>

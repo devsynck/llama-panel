@@ -15,6 +15,7 @@ class LlamaManager {
         this.metricsData = null;
         this._healthInterval = null;
         this._currentConfig = null;
+        this._serverArgs = null;
     }
 
     buildArgs(cfg) {
@@ -65,9 +66,9 @@ class LlamaManager {
             args.push('--models-max', String(cfg.parallel));
         }
 
-        // Pass metrics & slots natively if not explicitly disabled
+        // Pass metrics & slots — required for dashboard stats
         if (cfg.metrics !== false) { args.push('--metrics'); }
-        if (cfg.slots !== false && cfg.modelPath) { args.push('--slots'); }
+        if (cfg.slots !== false) { args.push('--slots'); }
 
         // Disable the built-in webui since we have our own
         // args.push('--no-webui');
@@ -77,6 +78,13 @@ class LlamaManager {
         //args.push('--log-colors', 'off');
         if (cfg.logDisable !== false) {
             args.push('--log-disable');
+        }
+
+        // Advanced features
+        if (cfg.jinja) { args.push('--jinja'); }
+        if (cfg.enableProps) { args.push('--props'); }
+        if (cfg.sleepIdleSeconds && cfg.sleepIdleSeconds > 0) {
+            args.push('--sleep-idle-seconds', String(cfg.sleepIdleSeconds));
         }
 
         // Extra args (user can override anything here)
@@ -105,6 +113,7 @@ class LlamaManager {
         }
 
         const args = this.buildArgs(cfg);
+        this._serverArgs = args;
         this.logs.clear();
         this.status = 'starting';
         this.lastError = null;
@@ -262,15 +271,38 @@ class LlamaManager {
                         this.slotsData = await slotsRes.json();
                     }
 
-                    // Fetch and parse metrics
-                    const metricsRes = await fetch(`${baseUrl}/metrics`);
+                    // Fetch and parse metrics — in router mode, model param is required
+                    let metricsUrl = `${baseUrl}/metrics`;
+                    if (modelIdentifier) {
+                        metricsUrl += `?model=${encodeURIComponent(modelIdentifier)}`;
+                    }
+                    const metricsRes = await fetch(metricsUrl);
                     if (metricsRes.ok) {
                         const rawMetrics = await metricsRes.text();
                         this.metricsData = this._parseMetrics(rawMetrics);
                     }
+
+                    // Fetch active models list (works in both single and router mode)
+                    try {
+                        const modelsRes = await fetch(`${baseUrl}/v1/models`);
+                        if (modelsRes.ok) {
+                            const modelsJson = await modelsRes.json();
+                            this.activeModelsData = modelsJson.data || [];
+                        }
+                    } catch (_) { /* optional endpoint */ }
+
+                    // Fetch server props
+                    try {
+                        const propsRes = await fetch(`${baseUrl}/props`);
+                        if (propsRes.ok) {
+                            this.propsData = await propsRes.json();
+                        }
+                    } catch (_) { /* optional */ }
                 } else {
                     this.slotsData = null;
                     this.metricsData = null;
+                    this.activeModelsData = null;
+                    this.propsData = null;
                 }
             } catch (_) {
                 // Ignore fetch errors during polling
@@ -281,13 +313,29 @@ class LlamaManager {
     _parseMetrics(raw) {
         const metrics = {};
         const lines = raw.split('\n');
+        // Metrics that should be summed across model labels (counters)
+        const SUMMABLE = new Set([
+            'tokens_predicted_total', 'prompt_tokens_total',
+            'tokens_predicted', 'prompt_tokens_processed',
+            'requests_processing', 'requests_deferred',
+            'kv_cache_tokens_count',
+        ]);
         for (const line of lines) {
             if (line.startsWith('#') || !line.trim()) continue;
-            const parts = line.split(' ');
-            if (parts.length >= 2) {
-                const key = parts[0].replace('llamacpp:', '');
-                const value = parseFloat(parts[1]);
-                metrics[key] = value;
+            // Prometheus format: metric_name{labels} value [timestamp]
+            // Labels are optional. Strip them before extracting key.
+            const match = line.match(/^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{[^}]*\})?\s+([\d.e+\-]+NaN|[\d.e+\-]+)/);
+            if (!match) continue;
+            const raw_key = match[1];
+            const value = parseFloat(match[2]);
+            if (isNaN(value)) continue;
+            // Strip the 'llamacpp:' namespace prefix
+            const key = raw_key.replace(/^llamacpp:/, '');
+            if (SUMMABLE.has(key)) {
+                metrics[key] = (metrics[key] || 0) + value;
+            } else {
+                // For gauges like ratios, take the max across slots
+                metrics[key] = Math.max(metrics[key] ?? -Infinity, value);
             }
         }
         return metrics;
@@ -300,6 +348,100 @@ class LlamaManager {
         }
         this.healthData = null;
         this.slotsData = null;
+        this.metricsData = null;
+        this.activeModelsData = null;
+        this.propsData = null;
+    }
+
+    /**
+     * Live-inject a new system prompt via POST /props (requires --props flag)
+     */
+    async sendProps(payload) {
+        const cfg = this._currentConfig || {};
+        const baseUrl = `http://${cfg.host || '127.0.0.1'}:${cfg.port || 8080}`;
+        const res = await fetch(`${baseUrl}/props`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+            const text = await res.text();
+            throw new Error(`/props returned ${res.status}: ${text}`);
+        }
+        return res.json();
+    }
+
+    _buildEffectiveArgsForModel(model) {
+        const args = [];
+
+        const PROBLEMATIC_DEFAULTS = {
+            threads: -1,
+            threadsBatch: -1,
+            batchSize: 2048,
+            ubatchSize: 512,
+            mmap: true,
+            splitMode: 'layer',
+        };
+
+        const shouldSkip = (key, value) => {
+            if (value === undefined || value === null || value === '') return true;
+            if ((key === 'cacheTypeK' || key === 'cacheTypeV') && value === 'none') return true;
+            if (key in PROBLEMATIC_DEFAULTS && value === PROBLEMATIC_DEFAULTS[key]) return true;
+            return false;
+        };
+
+        const modelParams = {
+            ctxSize: '--ctx-size',
+            gpuLayers: '--n-gpu-layers',
+            threads: '--threads',
+            threadsBatch: '--threads-batch',
+            batchSize: '--batch-size',
+            ubatchSize: '--ubatch-size',
+            parallel: '--parallel',
+            cacheTypeK: '--cache-type-k',
+            cacheTypeV: '--cache-type-v',
+            splitMode: '--split-mode',
+        };
+
+        const boolParams = {
+            flashAttn: '--flash-attn',
+            contBatching: '--cont-batching',
+            mlock: '--mlock',
+            cachePrompt: '--cache-prompt',
+        };
+
+        const genParams = {
+            temp: '--temp',
+            topK: '--top-k',
+            topP: '--top-p',
+            minP: '--min-p',
+            repeatPenalty: '--repeat-penalty',
+            presencePenalty: '--presence-penalty',
+        };
+
+        for (const [key, flag] of Object.entries(modelParams)) {
+            const value = model[key];
+            if (!shouldSkip(key, value)) {
+                args.push(`${flag} ${value}`);
+            }
+        }
+
+        for (const [key, flag] of Object.entries(boolParams)) {
+            if (model[key]) args.push(flag);
+        }
+
+        for (const [key, flag] of Object.entries(genParams)) {
+            const value = model[key];
+            if (value !== undefined && value !== null && value !== '') {
+                args.push(`${flag} ${value}`);
+            }
+        }
+
+        // Thinking mode via --chat-template-kwargs (requires --jinja)
+        if (model.thinking === true) args.push('--chat-template-kwargs \'{"enable_thinking":true}\'');
+        if (model.thinking === false) args.push('--chat-template-kwargs \'{"enable_thinking":false}\'');
+
+        return args.join('  ');
     }
 
     getStatus() {
@@ -307,16 +449,74 @@ class LlamaManager {
             ? Math.floor((Date.now() - this.startTime) / 1000)
             : 0;
 
-        return {
+        const result = {
             status: this.status,
             uptime,
             lastError: this.lastError,
             health: this.healthData,
             slots: this.slotsData,
-            metrics: this.metricsData,
+            metrics: this.metricsData ? { ...this.metricsData } : null,
             pid: this.process?.pid || null,
             config: this._currentConfig,
         };
+
+        // Always compute a slot-based KV cache estimate and take max(prometheus, slots).
+        // Prometheus snapshots at request boundaries (shows 0 if --cache-prompt is off),
+        // but slot data is live — so during active streaming the slot value wins.
+        if (result.slots && result.slots.length > 0) {
+            const nCtx = result.slots[0]?.n_ctx;
+            if (nCtx && nCtx > 0) {
+                const totalUsed = result.slots.reduce((sum, s) => {
+                    return sum + (s.n_prompt_tokens_processed || 0) + (s.n_decoded || 0);
+                }, 0);
+                if (!result.metrics) result.metrics = {};
+                const derivedRatio = Math.min(1, totalUsed / nCtx);
+                const promRatio = result.metrics.kv_cache_usage_ratio ?? 0;
+                if (derivedRatio > promRatio) {
+                    result.metrics.kv_cache_usage_ratio = derivedRatio;
+                    result.metrics.kv_cache_tokens_count = totalUsed;
+                } else if (result.metrics.kv_cache_usage_ratio === undefined) {
+                    result.metrics.kv_cache_usage_ratio = 0;
+                    result.metrics.kv_cache_tokens_count = 0;
+                }
+            }
+        }
+
+        // In single-model mode expose the raw CLI args as-is
+        if (this._serverArgs && !this._currentConfig?.usePresetMode) {
+            result.serverArgs = this._serverArgs.join(' ');
+        }
+
+        // Expose active models from /v1/models
+        if (this.activeModelsData) {
+            result.activeModels = this.activeModelsData;
+        }
+
+        // Expose server props
+        if (this.propsData) {
+            result.props = this.propsData;
+        }
+
+        // Add active preset info and expanded per-model effective args
+        if (this._currentConfig?.usePresetMode && this._currentConfig?.activePresetId) {
+            try {
+                const presetManager = new PresetManager();
+                const preset = presetManager.getPreset(this._currentConfig.activePresetId);
+                result.activePreset = preset;
+
+                // Build per-model effective args (what really ends up running)
+                if (preset && preset.models) {
+                    result.effectiveArgsByModel = {};
+                    for (const model of preset.models) {
+                        result.effectiveArgsByModel[model.identifier] = this._buildEffectiveArgsForModel(model);
+                    }
+                }
+            } catch (e) {
+                // Ignore errors loading preset
+            }
+        }
+
+        return result;
     }
 }
 

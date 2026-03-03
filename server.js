@@ -312,6 +312,78 @@ app.post('/api/presets/deactivate', (req, res) => {
     }
 });
 
+// --- Live Props (POST /props on the llama-server) ---
+app.post('/api/props', async (req, res) => {
+    if (llama.status !== 'running') {
+        return res.status(400).json({ error: 'Server is not running' });
+    }
+    try {
+        const result = await llama.sendProps(req.body);
+        res.json({ ok: true, result });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// --- LoRA Adapters (proxy to llama-server) ---
+app.get('/api/lora-adapters', async (req, res) => {
+    if (llama.status !== 'running') return res.json([]);
+    const cfg = config.load();
+    const baseUrl = `http://${cfg.host}:${cfg.port}`;
+    try {
+        const r = await fetch(`${baseUrl}/lora-adapters`);
+        if (!r.ok) return res.status(r.status).json({ error: 'Upstream error' });
+        res.json(await r.json());
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/lora-adapters', async (req, res) => {
+    if (llama.status !== 'running') {
+        return res.status(400).json({ error: 'Server is not running' });
+    }
+    const cfg = config.load();
+    const baseUrl = `http://${cfg.host}:${cfg.port}`;
+    try {
+        const r = await fetch(`${baseUrl}/lora-adapters`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(req.body),
+        });
+        if (!r.ok) return res.status(r.status).json({ error: 'Upstream error' });
+        res.json({ ok: true, result: await r.json() });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// --- Debug: raw metrics from llama-server ---
+app.get('/api/debug/metrics', async (req, res) => {
+    const liveCfg = llama._currentConfig || config.load();
+    const baseUrl = `http://${liveCfg.host}:${liveCfg.port}`;
+
+    // In router mode, /metrics requires ?model=
+    let metricsUrl = `${baseUrl}/metrics`;
+    if (liveCfg.usePresetMode && liveCfg.activePresetId) {
+        try {
+            const preset = presets.getPreset(liveCfg.activePresetId);
+            if (preset?.models?.length > 0) {
+                metricsUrl += `?model=${encodeURIComponent(preset.models[0].identifier)}`;
+            }
+        } catch (_) { }
+    }
+
+    const info = { metricsUrl, status: llama.status, parsedMetrics: llama.metricsData };
+    try {
+        const r = await fetch(metricsUrl);
+        const raw = await r.text();
+        res.json({ ...info, httpStatus: r.status, ok: r.ok, raw, rawLength: raw.length });
+    } catch (err) {
+        res.status(500).json({ ...info, error: err.message });
+    }
+});
+
 // --- Logs ---
 app.get('/api/logs', (req, res) => {
     const n = parseInt(req.query.n) || 200;
