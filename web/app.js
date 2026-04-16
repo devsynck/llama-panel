@@ -683,6 +683,20 @@ async function deleteModel(name) {
 
 // ============ Download ============
 
+// ============ Download ============
+
+function toggleClearButton() {
+    const input = document.getElementById('hf-search');
+    const clearBtn = document.getElementById('btn-clear');
+    clearBtn.style.display = input.value.trim() ? 'flex' : 'none';
+}
+
+function clearSearch() {
+    document.getElementById('hf-search').value = '';
+    toggleClearButton();
+    document.getElementById('search-results').innerHTML = '';
+}
+
 async function searchModels() {
     const query = document.getElementById('hf-search').value.trim();
     if (!query) return;
@@ -795,6 +809,12 @@ function updateDownloadsList(downloads) {
 
     container.innerHTML = downloads.map(d => {
         const progressClass = d.status === 'complete' ? 'complete' : d.status === 'error' ? 'error' : '';
+        const isDownloading = d.status === 'downloading';
+        const isPaused = d.status === 'paused';
+        const canPause = isDownloading;
+        const canResume = isPaused;
+        const canStop = isDownloading || isPaused;
+
         return `
       <div class="download-item">
         <div class="download-header">
@@ -810,9 +830,49 @@ function updateDownloadsList(downloads) {
           ${d.speed > 0 ? `<span>${formatSize(d.speed)}/s</span>` : ''}
           ${d.error ? `<span style="color: var(--danger)">${escapeHtml(d.error)}</span>` : ''}
         </div>
+        <div class="download-controls">
+          ${canPause ? `<button class="btn btn-sm btn-secondary" onclick="pauseDownload('${d.id}')">⏸ Pause</button>` : ''}
+          ${canResume ? `<button class="btn btn-sm btn-primary" onclick="resumeDownload('${d.id}')">▶ Resume</button>` : ''}
+          ${canStop ? `<button class="btn btn-sm btn-danger" onclick="stopDownload('${d.id}')">⏹ Stop</button>` : ''}
+        </div>
       </div>
     `;
     }).join('');
+}
+
+// ============ Download Controls ============
+
+async function pauseDownload(id) {
+    try {
+        const res = await fetch(`/api/downloads/${id}/pause`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        showToast('Download paused', 'info');
+    } catch (err) {
+        showToast('Failed to pause: ' + err.message, 'error');
+    }
+}
+
+async function resumeDownload(id) {
+    try {
+        const res = await fetch(`/api/downloads/${id}/resume`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        showToast('Download resumed', 'info');
+    } catch (err) {
+        showToast('Failed to resume: ' + err.message, 'error');
+    }
+}
+
+async function stopDownload(id) {
+    try {
+        const res = await fetch(`/api/downloads/${id}/stop`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        showToast('Download stopped', 'info');
+    } catch (err) {
+        showToast('Failed to stop: ' + err.message, 'error');
+    }
 }
 
 // ============ Logs ============
@@ -1140,11 +1200,10 @@ async function refreshPresets() {
           <div class="preset-meta">
             <span>📅 ${new Date(p.updatedAt).toLocaleDateString()}</span>
             <span>🧠 ${p.models.length} model${p.models.length > 1 ? 's' : ''}</span>
-            <span>💾 ${calculateTotalPresetSize(p.models, modelSizes)}</span>
           </div>
           <div class="preset-models-list">
             ${p.models.map(m => {
-                const params = [];
+              const params = [];
                 if (m.ctxSize && m.ctxSize !== 4096) params.push(`ctx:${m.ctxSize}`);
                 if (m.gpuLayers) params.push(`ngl:${m.gpuLayers}`);
                 if (m.temp && m.temp !== 0.8) params.push(`temp:${m.temp}`);

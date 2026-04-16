@@ -221,6 +221,34 @@ app.get('/api/downloads/:id', (req, res) => {
     res.json(progress);
 });
 
+// --- Download Control ---
+app.post('/api/downloads/:id/pause', (req, res) => {
+    try {
+        models.pauseDownload(req.params.id);
+        res.json({ ok: true });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+
+app.post('/api/downloads/:id/resume', (req, res) => {
+    try {
+        models.resumeDownload(req.params.id);
+        res.json({ ok: true });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+
+app.post('/api/downloads/:id/stop', (req, res) => {
+    try {
+        models.stopDownload(req.params.id);
+        res.json({ ok: true });
+    } catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+
 app.post('/api/models/migrate', (req, res) => {
     try {
         const migrated = models.migrateToFolderStructure();

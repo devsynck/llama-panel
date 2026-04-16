@@ -14,3 +14,6 @@ LLAMA_SERVER_API.md
 .worktrees/
 .security-key
 logs/security/
+TODOS.md
+.agents/tasks/*
+.gitignore

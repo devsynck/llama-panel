@@ -944,6 +944,24 @@ select {
   padding: 8px 0;
 }
 
+.btn-clear {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 1.2rem;
+  line-height: 1;
+  transition: all var(--transition);
+  flex-shrink: 0;
+}
+
+.btn-clear:hover {
+  color: var(--text-primary);
+  background: var(--bg-input);
+  border-radius: 4px;
+}
+
 .search-bar input::placeholder {
   color: var(--text-dim);
 }
@@ -1217,6 +1235,14 @@ select {
   gap: 16px;
   font-size: 0.78rem;
   color: var(--text-muted);
+}
+
+.download-controls {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
 }
 
 /* ============ Logs Page ============ */

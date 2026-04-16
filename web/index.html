@@ -617,7 +617,8 @@
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
             <input type="text" id="hf-search" placeholder="Search HuggingFace for GGUF models..."
-              onkeypress="if(event.key==='Enter')searchModels()">
+              onkeypress="if(event.key==='Enter')searchModels()" oninput="toggleClearButton()">
+            <button type="button" class="btn-clear" id="btn-clear" onclick="clearSearch()" style="display:none;">&times;</button>
             <button class="btn btn-primary" onclick="searchModels()" id="btn-search">Search</button>
           </div>
         </div>

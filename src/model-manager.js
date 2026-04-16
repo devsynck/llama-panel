@@ -6,7 +6,7 @@ const config = require('./config');
 
 class ModelManager {
     constructor() {
-        this.downloads = new Map(); // id -> { progress, total, speed, status, filename, error }
+        this.downloads = new Map(); // id -> { progress, total, speed, status, filename, error, paused, abortController }
     }
 
     getModelsDir() {
@@ -185,9 +185,16 @@ class ModelManager {
             downloaded: 0,
             speed: 0,
             error: null,
+            paused: false,
             startTime: Date.now(),
             filesCount: filesToDownload.length,
-            currentFileIndex: 0
+            currentFileIndex: 0,
+            abortController: null,
+            // For pause/resume support
+            fileProgress: {},  // { filename: { downloaded: number, total: number } }
+            filesToDownload: filesToDownload,
+            modelDir: modelDir,
+            hfToken: hfToken
         };
 
         this.downloads.set(downloadId, downloadState);
@@ -231,11 +238,17 @@ class ModelManager {
     async _doDownloadSequence(downloadId, repoId, filesToDownload, dir, hfToken) {
         const state = this.downloads.get(downloadId);
 
+        // Initialize abort controller
+        state.abortController = new AbortController();
+
         let globalTotal = 0;
         for (const file of filesToDownload) {
             globalTotal += await this._getFileSize(repoId, file, hfToken);
         }
         state.total = globalTotal;
+
+        if (state.abortController.signal.aborted) return;
+
         state.status = 'downloading';
 
         let globalDownloaded = 0;
@@ -245,6 +258,16 @@ class ModelManager {
         for (let i = 0; i < filesToDownload.length; i++) {
             const filename = filesToDownload[i];
             state.currentFileIndex = i;
+
+            // Check if paused before starting each file
+            while (state.paused && !state.abortController.signal.aborted) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+
+            if (state.abortController.signal.aborted) {
+                state.status = 'stopped';
+                return;
+            }
 
             // Use basename for local filename, but handle mmproj files specially
             let localFilename = path.basename(filename);
@@ -257,11 +280,12 @@ class ModelManager {
 
                 const makeRequest = (urlToFetch, redirectCount = 0) => {
                     if (redirectCount > 5) return reject(new Error('Too many redirects'));
+                    if (state.abortController.signal.aborted) return reject(new Error('Download stopped'));
 
                     const parsedUrl = new URL(urlToFetch);
                     const client = parsedUrl.protocol === 'https:' ? https : http;
 
-                    const req = client.get(urlToFetch, { headers }, (res) => {
+                    const req = client.get(urlToFetch, { headers, signal: state.abortController.signal }, (res) => {
                         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
                             res.resume();
                             return makeRequest(res.headers.location, redirectCount + 1);
@@ -272,8 +296,11 @@ class ModelManager {
                         const fileStream = fs.createWriteStream(tempPath);
                         let localDownloaded = 0;
 
-                        res.on('data', (chunk) => {
-                            localDownloaded += chunk.length;
+                        // Pipe immediately - this is the critical fix
+                        // The response data must be piped to the file stream as it arrives
+                        res.pipe(fileStream);
+
+                        const updateProgress = () => {
                             state.downloaded = globalDownloaded + localDownloaded;
                             state.progress = state.total > 0 ? Math.round((state.downloaded / state.total) * 100) : 0;
 
@@ -284,18 +311,31 @@ class ModelManager {
                                 lastTime = now;
                                 lastBytes = state.downloaded;
                             }
+                        };
+
+                        res.on('data', (chunk) => {
+                            localDownloaded += chunk.length;
+                            updateProgress();
                         });
 
-                        res.pipe(fileStream);
 
                         fileStream.on('finish', () => {
                             fileStream.close();
                             try {
+                                // Verify file size before completing
+                                const actualSize = fs.statSync(tempPath).size;
+                                if (actualSize === 0) {
+                                    try { fs.unlinkSync(tempPath); } catch (_) { }
+                                    reject(new Error(`Downloaded file is empty (0 bytes): ${localFilename}`));
+                                    return;
+                                }
+
                                 if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
                                 fs.renameSync(tempPath, destPath);
                                 globalDownloaded += localDownloaded;
                                 resolve();
                             } catch (err) {
+                                try { fs.unlinkSync(tempPath); } catch (_) { }
                                 reject(err);
                             }
                         });
@@ -306,7 +346,10 @@ class ModelManager {
                         });
                     });
 
-                    req.on('error', reject);
+                    req.on('error', (err) => {
+                        if (err.message === 'Download stopped') return;
+                        reject(err);
+                    });
                     req.setTimeout(30000, () => {
                         req.destroy();
                         reject(new Error('Request timeout'));
@@ -315,10 +358,16 @@ class ModelManager {
 
                 makeRequest(url);
             });
+
+            // Check if paused after completing each file
+            while (state.paused && !state.abortController.signal.aborted) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
         }
 
         state.status = 'complete';
         state.progress = 100;
+        state.paused = false;
     }
 
     getDownloadProgress(downloadId) {
@@ -333,9 +382,36 @@ class ModelManager {
         return result;
     }
 
+    pauseDownload(downloadId) {
+        const state = this.downloads.get(downloadId);
+        if (!state) throw new Error('Download not found');
+        if (state.status !== 'downloading') throw new Error('Cannot pause: download is not active');
+        state.paused = true;
+        state.status = 'paused';
+    }
+
+    resumeDownload(downloadId) {
+        const state = this.downloads.get(downloadId);
+        if (!state) throw new Error('Download not found');
+        if (state.status !== 'paused') throw new Error('Cannot resume: download is not paused');
+        state.paused = false;
+        state.status = 'downloading';
+        // The download will resume in the background via the _doDownloadSequence loop
+    }
+
+    stopDownload(downloadId) {
+        const state = this.downloads.get(downloadId);
+        if (!state) throw new Error('Download not found');
+        if (state.abortController) {
+            state.abortController.abort();
+        }
+        state.paused = false;
+        state.status = 'stopped';
+    }
+
     cleanupCompletedDownloads() {
         for (const [id, state] of this.downloads) {
-            if (state.status === 'complete' || state.status === 'error') {
+            if (state.status === 'complete' || state.status === 'error' || state.status === 'stopped') {
                 this.downloads.delete(id);
             }
         }
