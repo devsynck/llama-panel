@@ -7,7 +7,7 @@ import Modal from '../ui/Modal'
 import Tag from '../ui/Tag'
 import EmptyState from '../ui/EmptyState'
 import ConfirmDialog from '../ui/ConfirmDialog'
-import { Plus, Database, ChevronRight, Trash2 } from 'lucide-react'
+import { Plus, Database, Trash2 } from 'lucide-react'
 
 const emptyModel = () => ({
   identifier: '', modelPath: '',
@@ -31,7 +31,17 @@ function presetReducer(state, action) {
       models[action.index] = { ...models[action.index], [action.field]: action.value }
       return { ...state, models }
     }
-    case 'LOAD_PRESET': return { ...state, name: action.preset.name, description: action.preset.description || '', editingId: action.id, models: (action.preset.models || []).map(m => ({ ...emptyModel(), ...m })) }
+    case 'LOAD_PRESET': {
+      let models
+      if (action.preset.models?.length) {
+        models = action.preset.models.map(m => ({ ...emptyModel(), ...m }))
+      } else if (action.preset.model) {
+        models = [{ ...emptyModel(), identifier: action.preset.identifier || '', modelPath: action.preset.model, ctxSize: action.preset.ctxSize ?? '', gpuLayers: action.preset.gpuLayers ?? '', threads: action.preset.threads ?? '', batchSize: action.preset.batchSize ?? '', loadMmproj: !!action.preset.mmproj }]
+      } else {
+        models = [emptyModel()]
+      }
+      return { ...state, name: action.preset.name, description: action.preset.description || '', editingId: action.id, models }
+    }
     case 'RESET': return { name: '', description: '', editingId: null, models: [emptyModel()] }
     default: return state
   }
@@ -206,13 +216,12 @@ export default function PresetsPage() {
 }
 
 function PresetModelRow({ model, index, availableModels, dispatch, inputCls, selectCls }) {
-  const [openSections, setOpenSections] = useState({ args: true, memory: false, gen: false })
-  const toggle = (key) => setOpenSections(prev => ({ ...prev, [key]: !prev[key] }))
   const update = (field, value) => dispatch({ type: 'UPDATE_MODEL', index, field, value })
+  const gridCls = 'grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3'
 
   return (
-    <div className="flex flex-col p-4 bg-[var(--bg-input)] border border-[var(--border)] rounded-md">
-      <div className="flex items-start gap-2.5 mb-3 pb-3 border-b border-[var(--border)]">
+    <div className="flex flex-col p-4 bg-[var(--bg-input)] border border-[var(--border)] rounded-md gap-4">
+      <div className="flex items-start gap-2.5 pb-3 border-b border-[var(--border)]">
         <label className="flex flex-col gap-1 flex-1">
           <span className="text-[0.65rem] text-[var(--text-dim)]">Identifier *</span>
           <input className={inputCls} value={model.identifier} onChange={e => update('identifier', e.target.value)} placeholder="llama-2-7b" />
@@ -229,8 +238,8 @@ function PresetModelRow({ model, index, availableModels, dispatch, inputCls, sel
         </button>
       </div>
 
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-3">
-        <CollapsibleSection title="Server Arguments" open={openSections.args} onToggle={() => toggle('args')}>
+      <Section title="Server Arguments">
+        <div className={gridCls}>
           <Field label="Context Size" inputCls={inputCls} value={model.ctxSize} onChange={v => update('ctxSize', v)} placeholder="4096" type="number" />
           <Field label="GPU Layers" inputCls={inputCls} value={model.gpuLayers} onChange={v => update('gpuLayers', v)} placeholder="99 or auto" />
           <Field label="Threads" inputCls={inputCls} value={model.threads} onChange={v => update('threads', v)} placeholder="-1" type="number" />
@@ -239,58 +248,57 @@ function PresetModelRow({ model, index, availableModels, dispatch, inputCls, sel
           <Field label="Micro Batch" inputCls={inputCls} value={model.ubatchSize} onChange={v => update('ubatchSize', v)} placeholder="512" type="number" />
           <SelectField label="Flash Attention" selectCls={selectCls} value={model.flashAttn} onChange={v => update('flashAttn', v)} options={['', 'on', 'off', 'auto']} labels={['Default', 'On', 'Off', 'Auto']} />
           <SelectField label="Split Mode" selectCls={selectCls} value={model.splitMode} onChange={v => update('splitMode', v)} options={['', 'layer', 'row', 'none']} labels={['Default', 'Layer', 'Row', 'None']} />
-        </CollapsibleSection>
+        </div>
+      </Section>
 
-        <CollapsibleSection title="Memory Options" open={openSections.memory} onToggle={() => toggle('memory')}>
+      <Section title="Memory Options">
+        <div className={gridCls}>
           <SelectField label="Cache K" selectCls={selectCls} value={model.cacheTypeK} onChange={v => update('cacheTypeK', v)}
             options={['none', 'q4_0', 'q8_0', 'f16', 'bf16', 'f32']}
             labels={['default (f16)', 'q4_0 (recommended)', 'q8_0', 'f16', 'bf16', 'f32']} />
           <SelectField label="Cache V" selectCls={selectCls} value={model.cacheTypeV} onChange={v => update('cacheTypeV', v)}
             options={['none', 'q4_0', 'q8_0', 'f16', 'bf16', 'f32']}
             labels={['default (f16)', 'q4_0 (recommended)', 'q8_0', 'f16', 'bf16', 'f32']} />
-          <div className="col-span-full px-3 py-2 bg-[var(--warning-bg)] border border-[var(--warning)]/20 rounded-md text-[0.72rem] text-[var(--warning)] leading-relaxed">
-            q4_0 reduces KV cache VRAM by ~4x — critical for large context (32k+).
-          </div>
-          <div className="col-span-full flex gap-6 pt-1">
-            <Checkbox label="Memory Lock (mlock)" checked={model.mlock} onChange={v => update('mlock', v)} />
-            <Checkbox label="Memory Map (mmap)" checked={model.mmap} onChange={v => update('mmap', v)} />
-            <Checkbox label="Prompt Caching" checked={model.cachePrompt} onChange={v => update('cachePrompt', v)} />
-            <Checkbox label="Load MMProj" checked={model.loadMmproj} onChange={v => update('loadMmproj', v)} />
-          </div>
-        </CollapsibleSection>
+        </div>
+        <div className="px-3 py-2 bg-[var(--warning-bg)] border border-[var(--warning)]/20 rounded-md text-[0.72rem] text-[var(--warning)] leading-relaxed">
+          q4_0 reduces KV cache VRAM by ~4x — critical for large context (32k+).
+        </div>
+        <div className="flex flex-wrap gap-x-6 gap-y-2 pt-1">
+          <Checkbox label="Memory Lock (mlock)" checked={model.mlock} onChange={v => update('mlock', v)} />
+          <Checkbox label="Memory Map (mmap)" checked={model.mmap} onChange={v => update('mmap', v)} />
+          <Checkbox label="Prompt Caching" checked={model.cachePrompt} onChange={v => update('cachePrompt', v)} />
+          <Checkbox label="Load MMProj" checked={model.loadMmproj} onChange={v => update('loadMmproj', v)} />
+        </div>
+      </Section>
 
-        <CollapsibleSection title="Generation Parameters" open={openSections.gen} onToggle={() => toggle('gen')}>
+      <Section title="Generation Parameters">
+        <div className={gridCls}>
           <Field label="Temperature" inputCls={inputCls} value={model.temp} onChange={v => update('temp', v)} placeholder="0.8" type="number" step="0.1" />
           <Field label="Top K" inputCls={inputCls} value={model.topK} onChange={v => update('topK', v)} placeholder="40" type="number" />
           <Field label="Top P" inputCls={inputCls} value={model.topP} onChange={v => update('topP', v)} placeholder="0.9" type="number" step="0.01" />
           <Field label="Min P" inputCls={inputCls} value={model.minP} onChange={v => update('minP', v)} placeholder="0.05" type="number" step="0.01" />
           <Field label="Repeat Penalty" inputCls={inputCls} value={model.repeatPenalty} onChange={v => update('repeatPenalty', v)} placeholder="1.1" type="number" step="0.1" />
           <Field label="Presence Penalty" inputCls={inputCls} value={model.presencePenalty} onChange={v => update('presencePenalty', v)} placeholder="0.0" type="number" step="0.1" />
-          <div className="col-span-full">
-            <label className="flex flex-col gap-1">
-              <span className="text-[0.65rem] text-[var(--text-dim)]">Thinking Mode</span>
-              <select className={selectCls} value={model.thinking} onChange={e => update('thinking', e.target.value)}>
-                <option value="">Default (model decides)</option>
-                <option value="true">Enabled — show chain of thought</option>
-                <option value="false">Disabled — no thinking tokens</option>
-              </select>
-            </label>
-          </div>
-        </CollapsibleSection>
-      </div>
+        </div>
+        <label className="flex flex-col gap-1 max-w-[220px]">
+          <span className="text-[0.65rem] text-[var(--text-dim)]">Thinking Mode</span>
+          <select className={selectCls} value={model.thinking} onChange={e => update('thinking', e.target.value)}>
+            <option value="">Default (model decides)</option>
+            <option value="true">Enabled — show chain of thought</option>
+            <option value="false">Disabled — no thinking tokens</option>
+          </select>
+        </label>
+      </Section>
     </div>
   )
 }
 
-function CollapsibleSection({ title, open, onToggle, children }) {
+function Section({ title, children }) {
   return (
-    <>
-      <button onClick={onToggle} className="col-span-full flex items-center gap-2 px-3 py-2 bg-[var(--accent-subtle)] rounded-md cursor-pointer hover:brightness-110 transition-colors select-none">
-        <ChevronRight size={16} className={`transition-transform text-[var(--text-secondary)] ${open ? 'rotate-90' : ''}`} />
-        <span className="font-semibold text-sm text-[var(--text-secondary)]">{title}</span>
-      </button>
-      {open && <div className="col-span-full grid grid-cols-[repeat(auto-fit,minmax(140px,1fr))] gap-3 pt-1">{children}</div>}
-    </>
+    <div className="flex flex-col gap-2">
+      <span className="text-[0.68rem] font-semibold text-[var(--text-muted)] uppercase tracking-wider">{title}</span>
+      <div className="flex flex-col gap-3">{children}</div>
+    </div>
   )
 }
 

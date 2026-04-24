@@ -9,6 +9,7 @@
 
 /* ============ Light theme (default) ============ */
 :root {
+  color-scheme: light;
   --bg-primary: #f1f5f9;
   --bg-secondary: #ffffff;
   --bg-card: #ffffff;
@@ -46,6 +47,7 @@
 
 /* ============ Dark theme ============ */
 .dark {
+  color-scheme: dark;
   --bg-primary: #0a0e17;
   --bg-secondary: #111827;
   --bg-card: #1a2236;
