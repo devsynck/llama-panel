@@ -21,7 +21,7 @@ const presets = new PresetManager();
 app.use(express.json());
 
 // Serve web files: embedded (exe mode) or filesystem (dev mode)
-const MIME_TYPES = { html: 'text/html', css: 'text/css', js: 'application/javascript' };
+const MIME_TYPES = { html: 'text/html', css: 'text/css', js: 'application/javascript', json: 'application/json', svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', woff: 'font/woff', woff2: 'font/woff2', map: 'application/json' };
 if (typeof globalThis.__EMBEDDED_WEB__ !== 'undefined') {
     // Embedded mode (standalone exe)
     app.use((req, res, next) => {
@@ -35,8 +35,8 @@ if (typeof globalThis.__EMBEDDED_WEB__ !== 'undefined') {
         }
     });
 } else {
-    // Dev mode
-    app.use(express.static(path.join(__dirname, 'web')));
+    // Dev mode (serves Vite build output from dist/)
+    app.use(express.static(path.join(__dirname, 'dist')));
 }
 
 // ============ API Routes ============
@@ -447,7 +447,7 @@ app.get('*', (req, res) => {
     if (typeof globalThis.__EMBEDDED_WEB__ !== 'undefined') {
         res.type('html').send(globalThis.__EMBEDDED_WEB__['index.html']);
     } else {
-        res.sendFile(path.join(__dirname, 'web', 'index.html'));
+        res.sendFile(path.join(__dirname, 'dist', 'index.html'));
     }
 });
 

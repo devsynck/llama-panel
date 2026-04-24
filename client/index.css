@@ -1,0 +1,111 @@
+@import "tailwindcss";
+
+@variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+
+/* ============ Light theme (default) ============ */
+:root {
+  --bg-primary: #f1f5f9;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f8fafc;
+  --bg-input: #f1f5f9;
+  --bg-sidebar: #ffffff;
+  --bg-overlay: rgba(0, 0, 0, 0.3);
+
+  --border: #e2e8f0;
+  --border-light: #cbd5e1;
+  --border-focus: #6366f1;
+
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+  --text-dim: #94a3b8;
+
+  --accent: #6366f1;
+  --accent-hover: #4f46e5;
+  --accent-subtle: rgba(99, 102, 241, 0.08);
+  --accent-glow: rgba(99, 102, 241, 0.18);
+
+  --success: #10b981;
+  --success-bg: rgba(16, 185, 129, 0.08);
+
+  --danger: #ef4444;
+  --danger-bg: rgba(239, 68, 68, 0.08);
+
+  --warning: #f59e0b;
+  --warning-bg: rgba(245, 158, 11, 0.08);
+
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-card-hover: 0 4px 14px rgba(0, 0, 0, 0.08);
+}
+
+/* ============ Dark theme ============ */
+.dark {
+  --bg-primary: #0a0e17;
+  --bg-secondary: #111827;
+  --bg-card: #1a2236;
+  --bg-card-hover: #1f2a42;
+  --bg-input: #0f1729;
+  --bg-sidebar: #0c1220;
+  --bg-overlay: rgba(0, 0, 0, 0.7);
+
+  --border: #1e2d4a;
+  --border-light: #2a3f66;
+  --border-focus: #6366f1;
+
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-dim: #475569;
+
+  --accent: #6366f1;
+  --accent-hover: #818cf8;
+  --accent-subtle: rgba(99, 102, 241, 0.12);
+  --accent-glow: rgba(99, 102, 241, 0.25);
+
+  --success: #10b981;
+  --success-bg: rgba(16, 185, 129, 0.12);
+
+  --danger: #ef4444;
+  --danger-bg: rgba(239, 68, 68, 0.12);
+
+  --warning: #f59e0b;
+  --warning-bg: rgba(245, 158, 11, 0.12);
+
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-card-hover: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
+@layer base {
+  html {
+    font-size: 14px;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    overflow: hidden;
+    height: 100vh;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--border-light);
+  }
+}

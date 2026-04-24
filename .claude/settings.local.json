@@ -4,7 +4,18 @@
       "WebSearch",
       "Bash(curl:*)",
       "mcp__fetch__fetch",
-      "Skill(keybindings-help)"
+      "Skill(keybindings-help)",
+      "mcp__plugin_context7_context7__resolve-library-id",
+      "mcp__plugin_context7_context7__query-docs",
+      "Bash(npm install *)",
+      "Bash(npx vite *)",
+      "Bash(node server.js)",
+      "Bash(kill %1)",
+      "Bash(pkill -f \"node server.js\")",
+      "Read(//d/Projects/llama-panel/**)",
+      "Bash(pkill -f \"vite\")",
+      "Bash(npx kill-port *)",
+      "Bash(npm run *)"
     ]
   }
 }

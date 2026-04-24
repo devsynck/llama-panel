@@ -42,11 +42,24 @@ console.log('   ✅ Bundle created');
 // Step 3: Prepend embedded web assets using globalThis.__EMBEDDED_WEB__
 console.log('📦 Step 3: Embedding web assets...');
 
-var webDir = path.join(__dirname, 'web');
+var buildDir = path.join(__dirname, 'dist');
 var webFiles = {};
-fs.readdirSync(webDir).forEach(function (file) {
-    webFiles[file] = fs.readFileSync(path.join(webDir, file), 'utf-8');
-});
+
+function readDirRecursive(dir, base) {
+    for (var entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        var fullPath = path.join(dir, entry.name);
+        var relativePath = base ? (base + '/' + entry.name) : entry.name;
+        if (entry.isDirectory()) {
+            readDirRecursive(fullPath, relativePath);
+        } else {
+            // Skip SEA build artifacts
+            if (entry.name === 'bundle.cjs' || entry.name === 'sea-config.json' || entry.name === 'sea-prep.blob') continue;
+            if (entry.name.endsWith('.exe')) continue;
+            webFiles[relativePath] = fs.readFileSync(fullPath, 'utf-8');
+        }
+    }
+}
+readDirRecursive(buildDir, '');
 
 var bundleSrc = fs.readFileSync(BUNDLE_FILE, 'utf-8');
 var preamble = '// Embedded web assets for standalone exe\n';

@@ -5,19 +5,32 @@
   "license": "MIT",
   "main": "server.js",
   "scripts": {
+    "dev": "concurrently \"node server.js\" \"vite\"",
     "start": "node server.js",
-    "build": "node build.js",
+    "build:web": "vite build",
+    "build:exe": "node build.js",
+    "build": "vite build && node build.js",
     "release:patch": "npm version patch && git push --follow-tags",
     "release:minor": "npm version minor && git push --follow-tags",
     "release:major": "npm version major && git push --follow-tags"
   },
   "dependencies": {
+    "clsx": "^2.1.1",
     "express": "^4.21.2",
+    "lucide-react": "^1.9.0",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "react-router-dom": "^7.14.2",
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4.2.4",
+    "@vitejs/plugin-react": "^6.0.1",
+    "concurrently": "^9.2.1",
     "esbuild": "^0.27.3",
-    "postject": "^1.0.0-alpha.6"
+    "postject": "^1.0.0-alpha.6",
+    "tailwindcss": "^4.2.4",
+    "vite": "^8.0.10"
   },
   "pkg": {
     "scripts": [
