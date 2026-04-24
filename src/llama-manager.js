@@ -1,7 +1,6 @@
 const { spawn } = require('child_process');
 const LogBuffer = require('./log-buffer');
 const config = require('./config');
-const PresetManager = require('./preset-manager');
 
 class LlamaManager {
     constructor() {
@@ -11,8 +10,6 @@ class LlamaManager {
         this.startTime = null;
         this.lastError = null;
         this.healthData = null;
-        this.slotsData = null;
-        this.metricsData = null;
         this._healthInterval = null;
         this._currentConfig = null;
         this._serverArgs = null;
@@ -21,63 +18,40 @@ class LlamaManager {
     buildArgs(cfg) {
         const args = [];
 
-        // Check if preset mode is enabled
-        const isPresetMode = cfg.modelsPresetPath && require('fs').existsSync(cfg.modelsPresetPath);
-
-        if (isPresetMode) {
-            args.push('--models-preset', cfg.modelsPresetPath);
-            this._logManager(`Using preset mode: ${cfg.modelsPresetPath}`);
-        } else if (cfg.modelPath) {
+        if (cfg.modelPath) {
             args.push('-m', cfg.modelPath);
         }
 
-        // Server-level args (apply in both modes)
         if (cfg.host && cfg.host !== '127.0.0.1') { args.push('--host', cfg.host); }
         if (cfg.port && cfg.port !== 8080) { args.push('--port', String(cfg.port)); }
         if (cfg.apiKey) { args.push('--api-key', cfg.apiKey); }
 
-        // Model-specific args - in preset mode, let the preset control these
-        // In single model mode, use config values
-        if (!isPresetMode) {
-            if (cfg.ctxSize) { args.push('-c', String(cfg.ctxSize)); }
-            if (cfg.threads && cfg.threads !== -1) { args.push('-t', String(cfg.threads)); }
-            if (cfg.threadsBatch && cfg.threadsBatch !== -1) { args.push('-tb', String(cfg.threadsBatch)); }
-            if (cfg.batchSize && cfg.batchSize !== 2048) { args.push('-b', String(cfg.batchSize)); }
-            if (cfg.ubatchSize && cfg.ubatchSize !== 512) { args.push('-ub', String(cfg.ubatchSize)); }
-            if (cfg.gpuLayers !== undefined && cfg.gpuLayers !== '' && cfg.gpuLayers !== 'auto') { args.push('-ngl', String(cfg.gpuLayers)); }
-            if (cfg.flashAttn && cfg.flashAttn !== '' && cfg.flashAttn !== 'auto') { args.push('-fa', String(cfg.flashAttn)); }
-            if (cfg.contBatching) { args.push('-cb'); }
-            if (cfg.mlock) { args.push('--mlock'); }
-            if (cfg.mmap === false) { args.push('--no-mmap'); }
-            if (cfg.cachePrompt) { args.push('--cache-prompt'); }
-            if (cfg.cacheTypeK && cfg.cacheTypeK !== '' && cfg.cacheTypeK !== 'f16') { args.push('-ctk', cfg.cacheTypeK); }
-            if (cfg.cacheTypeV && cfg.cacheTypeV !== '' && cfg.cacheTypeV !== 'f16') { args.push('-ctv', cfg.cacheTypeV); }
-            if (cfg.splitMode && cfg.splitMode !== '' && cfg.splitMode !== 'layer') { args.push('-sm', cfg.splitMode); }
-        } else {
-            // In preset mode, warn if extraArgs might override preset values
-            if (cfg.extraArgs && cfg.extraArgs.includes('-ngl')) {
-                this._logManager('Warning: extraArgs contains -ngl which may override preset values');
-            }
-        }
+        if (cfg.ctxSize) { args.push('-c', String(cfg.ctxSize)); }
+        if (cfg.threads && cfg.threads !== -1) { args.push('-t', String(cfg.threads)); }
+        if (cfg.threadsBatch && cfg.threadsBatch !== -1) { args.push('-tb', String(cfg.threadsBatch)); }
+        if (cfg.batchSize && cfg.batchSize !== 2048) { args.push('-b', String(cfg.batchSize)); }
+        if (cfg.ubatchSize && cfg.ubatchSize !== 512) { args.push('-ub', String(cfg.ubatchSize)); }
+        if (cfg.gpuLayers !== undefined && cfg.gpuLayers !== '' && cfg.gpuLayers !== 'auto') { args.push('-ngl', String(cfg.gpuLayers)); }
+        if (cfg.flashAttn === 'on' || cfg.flashAttn === 'off') { args.push('-fa', cfg.flashAttn); }
+        if (cfg.fit !== undefined) { args.push('-fit', cfg.fit ? 'on' : 'off'); }
+        if (cfg.noMmap) { args.push('--no-mmap'); }
+        if (cfg.cacheTypeK && cfg.cacheTypeK !== '') { args.push('-ctk', cfg.cacheTypeK); }
+        if (cfg.cacheTypeV && cfg.cacheTypeV !== '') { args.push('-ctv', cfg.cacheTypeV); }
+        if (cfg.splitMode && cfg.splitMode !== '' && cfg.splitMode !== 'layer') { args.push('-sm', cfg.splitMode); }
 
-
-        // Pass metrics & slots — required for dashboard stats
-        if (cfg.metrics !== false) { args.push('--metrics'); }
-        if (cfg.slots !== false) { args.push('--slots'); }
-
-        // Disable the built-in webui since we have our own
-        // args.push('--no-webui');
-        // Verbose logging for stats
         args.push('-v');
-        // Control logging style
-        //args.push('--log-colors', 'off');
-        if (cfg.logDisable !== false) {
+
+        if (cfg.temp !== undefined) { args.push('--temp', String(cfg.temp)); }
+        if (cfg.topK !== undefined) { args.push('--top-k', String(cfg.topK)); }
+        if (cfg.topP !== undefined) { args.push('--top-p', String(cfg.topP)); }
+        if (cfg.minP !== undefined) { args.push('--min-p', String(cfg.minP)); }
+        if (cfg.repeatPenalty !== undefined) { args.push('--repeat-penalty', String(cfg.repeatPenalty)); }
+        if (cfg.presencePenalty !== undefined) { args.push('--presence-penalty', String(cfg.presencePenalty)); }
+
+        if (cfg.logDisable) {
             args.push('--log-disable');
         }
 
-        // Advanced features
-
-        // Extra args (user can override anything here)
         if (cfg.extraArgs) {
             const extra = cfg.extraArgs.trim().split(/\s+/);
             args.push(...extra);
@@ -94,10 +68,9 @@ class LlamaManager {
         const cfg = config.load();
         this._currentConfig = cfg;
 
-        if (!cfg.modelPath && !cfg.modelsPresetPath) {
+        if (!cfg.modelPath) {
             this.logs.push('[Manager] No active model selected. Starting without a model.');
         }
-
 
         const args = this.buildArgs(cfg);
         this._serverArgs = args;
@@ -133,7 +106,6 @@ class LlamaManager {
             for (const line of lines) {
                 this.logs.push(line);
                 console.error(line);
-                // Detect when server is ready (legacy fallback)
                 if (line.includes('server is listening on')) {
                     if (this.status === 'starting') {
                         this.status = 'running';
@@ -163,7 +135,6 @@ class LlamaManager {
             this.process = null;
         });
 
-        // Wait a bit and check if process is still alive
         return new Promise((resolve, reject) => {
             setTimeout(() => {
                 if (this.status === 'error') {
@@ -198,7 +169,6 @@ class LlamaManager {
                     resolve();
                 });
                 this.process.kill('SIGTERM');
-                // On Windows, SIGTERM doesn't work well, use taskkill
                 if (process.platform === 'win32' && this.process.pid) {
                     spawn('taskkill', ['/pid', String(this.process.pid), '/f', '/t'], { windowsHide: true });
                 }
@@ -215,7 +185,6 @@ class LlamaManager {
         cfg.modelPath = modelPath;
         config.save(cfg);
         await this.stop();
-        // Small delay to ensure port is freed
         await new Promise(r => setTimeout(r, 1500));
         await this.start();
     }
@@ -223,20 +192,6 @@ class LlamaManager {
     _startHealthPolling(cfg) {
         this._stopHealthPolling();
         const baseUrl = `http://${cfg.host}:${cfg.port}`;
-
-        // In router mode, get the first model identifier from active preset
-        let modelIdentifier = null;
-        if (cfg.activePresetId) {
-            try {
-                const presetManager = new PresetManager();
-                const preset = presetManager.getPreset(cfg.activePresetId);
-                if (preset && preset.models && preset.models.length > 0) {
-                    modelIdentifier = preset.models[0].identifier;
-                }
-            } catch (e) {
-                // Ignore preset loading errors
-            }
-        }
 
         this._healthInterval = setInterval(async () => {
             try {
@@ -248,86 +203,16 @@ class LlamaManager {
                         this.logs.push('[Manager] Server is ready (verified via health check)');
                     }
                 }
+            } catch (_) {}
 
-                if (this.healthData && (this.healthData.status === 'ok' || this.healthData.status === 'ready')) {
-                    // Fetch slots - in router mode, need to specify model
-                    let slotsUrl = `${baseUrl}/slots`;
-                    if (modelIdentifier) {
-                        slotsUrl += `?model=${encodeURIComponent(modelIdentifier)}`;
-                    }
-                    const slotsRes = await fetch(slotsUrl);
-                    if (slotsRes.ok) {
-                        this.slotsData = await slotsRes.json();
-                    }
-
-                    // Fetch and parse metrics — in router mode, model param is required
-                    let metricsUrl = `${baseUrl}/metrics`;
-                    if (modelIdentifier) {
-                        metricsUrl += `?model=${encodeURIComponent(modelIdentifier)}`;
-                    }
-                    const metricsRes = await fetch(metricsUrl);
-                    if (metricsRes.ok) {
-                        const rawMetrics = await metricsRes.text();
-                        this.metricsData = this._parseMetrics(rawMetrics);
-                    }
-
-                    // Fetch active models list (works in both single and router mode)
-                    try {
-                        const modelsRes = await fetch(`${baseUrl}/v1/models`);
-                        if (modelsRes.ok) {
-                            const modelsJson = await modelsRes.json();
-                            this.activeModelsData = modelsJson.data || [];
-                        }
-                    } catch (_) { /* optional endpoint */ }
-
-                    // Fetch server props
-                    try {
-                        const propsRes = await fetch(`${baseUrl}/props`);
-                        if (propsRes.ok) {
-                            this.propsData = await propsRes.json();
-                        }
-                    } catch (_) { /* optional */ }
-                } else {
-                    this.slotsData = null;
-                    this.metricsData = null;
-                    this.activeModelsData = null;
-                    this.propsData = null;
+            try {
+                const modelsRes = await fetch(`${baseUrl}/v1/models`);
+                if (modelsRes.ok) {
+                    const modelsJson = await modelsRes.json();
+                    this.activeModelsData = modelsJson.data || [];
                 }
-            } catch (_) {
-                // Ignore fetch errors during polling
-            }
+            } catch (_) {}
         }, 2000);
-    }
-
-    _parseMetrics(raw) {
-        const metrics = {};
-        const lines = raw.split('\n');
-        // Metrics that should be summed across model labels (counters)
-        const SUMMABLE = new Set([
-            'tokens_predicted_total', 'prompt_tokens_total',
-            'tokens_predicted', 'prompt_tokens_processed',
-            'requests_processing', 'requests_deferred',
-            'kv_cache_tokens_count',
-        ]);
-        for (const line of lines) {
-            if (line.startsWith('#') || !line.trim()) continue;
-            // Prometheus format: metric_name{labels} value [timestamp]
-            // Labels are optional. Strip them before extracting key.
-            const match = line.match(/^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{[^}]*\})?\s+([\d.e+\-]+NaN|[\d.e+\-]+)/);
-            if (!match) continue;
-            const raw_key = match[1];
-            const value = parseFloat(match[2]);
-            if (isNaN(value)) continue;
-            // Strip the 'llamacpp:' namespace prefix
-            const key = raw_key.replace(/^llamacpp:/, '');
-            if (SUMMABLE.has(key)) {
-                metrics[key] = (metrics[key] || 0) + value;
-            } else {
-                // For gauges like ratios, take the max across slots
-                metrics[key] = Math.max(metrics[key] ?? -Infinity, value);
-            }
-        }
-        return metrics;
     }
 
     _stopHealthPolling() {
@@ -336,84 +221,7 @@ class LlamaManager {
             this._healthInterval = null;
         }
         this.healthData = null;
-        this.slotsData = null;
-        this.metricsData = null;
         this.activeModelsData = null;
-        this.propsData = null;
-    }
-
-
-    _buildEffectiveArgsForModel(model) {
-        const args = [];
-
-        const PROBLEMATIC_DEFAULTS = {
-            threads: -1,
-            threadsBatch: -1,
-            batchSize: 2048,
-            ubatchSize: 512,
-            mmap: true,
-            splitMode: 'layer',
-        };
-
-        const shouldSkip = (key, value) => {
-            if (value === undefined || value === null || value === '') return true;
-            if ((key === 'cacheTypeK' || key === 'cacheTypeV') && value === 'none') return true;
-            if (key in PROBLEMATIC_DEFAULTS && value === PROBLEMATIC_DEFAULTS[key]) return true;
-            return false;
-        };
-
-        const modelParams = {
-            ctxSize: '--ctx-size',
-            gpuLayers: '--n-gpu-layers',
-            threads: '--threads',
-            threadsBatch: '--threads-batch',
-            batchSize: '--batch-size',
-            ubatchSize: '--ubatch-size',
-            parallel: '--parallel',
-            cacheTypeK: '--cache-type-k',
-            cacheTypeV: '--cache-type-v',
-            splitMode: '--split-mode',
-        };
-
-        const boolParams = {
-            flashAttn: '--flash-attn',
-            contBatching: '--cont-batching',
-            mlock: '--mlock',
-            cachePrompt: '--cache-prompt',
-        };
-
-        const genParams = {
-            temp: '--temp',
-            topK: '--top-k',
-            topP: '--top-p',
-            minP: '--min-p',
-            repeatPenalty: '--repeat-penalty',
-            presencePenalty: '--presence-penalty',
-        };
-
-        for (const [key, flag] of Object.entries(modelParams)) {
-            const value = model[key];
-            if (!shouldSkip(key, value)) {
-                args.push(`${flag} ${value}`);
-            }
-        }
-
-        for (const [key, flag] of Object.entries(boolParams)) {
-            if (model[key]) args.push(flag);
-        }
-
-        for (const [key, flag] of Object.entries(genParams)) {
-            const value = model[key];
-            if (value !== undefined && value !== null && value !== '') {
-                args.push(`${flag} ${value}`);
-            }
-        }
-
-        // Thinking mode via --chat-template-kwargs (requires --jinja)
-        if (model.thinking === true) args.push('--chat-template-kwargs \'{"enable_thinking":true}\'');
-        if (model.thinking === false) args.push('--chat-template-kwargs \'{"enable_thinking":false}\'');
-
-        return args.join('  ');
     }
 
     getStatus() {
@@ -426,66 +234,16 @@ class LlamaManager {
             uptime,
             lastError: this.lastError,
             health: this.healthData,
-            slots: this.slotsData,
-            metrics: this.metricsData ? { ...this.metricsData } : null,
             pid: this.process?.pid || null,
             config: this._currentConfig,
         };
 
-        // Always compute a slot-based KV cache estimate and take max(prometheus, slots).
-        // Prometheus snapshots at request boundaries (shows 0 if --cache-prompt is off),
-        // but slot data is live — so during active streaming the slot value wins.
-        if (result.slots && result.slots.length > 0) {
-            const nCtx = result.slots[0]?.n_ctx;
-            if (nCtx && nCtx > 0) {
-                const totalUsed = result.slots.reduce((sum, s) => {
-                    return sum + (s.n_prompt_tokens_processed || 0) + (s.n_decoded || 0);
-                }, 0);
-                if (!result.metrics) result.metrics = {};
-                const derivedRatio = Math.min(1, totalUsed / nCtx);
-                const promRatio = result.metrics.kv_cache_usage_ratio ?? 0;
-                if (derivedRatio > promRatio) {
-                    result.metrics.kv_cache_usage_ratio = derivedRatio;
-                    result.metrics.kv_cache_tokens_count = totalUsed;
-                } else if (result.metrics.kv_cache_usage_ratio === undefined) {
-                    result.metrics.kv_cache_usage_ratio = 0;
-                    result.metrics.kv_cache_tokens_count = 0;
-                }
-            }
-        }
-
-        // In single-model mode expose the raw CLI args as-is
-        if (this._serverArgs && !this._currentConfig?.modelsPresetPath) {
+        if (this._serverArgs) {
             result.serverArgs = this._serverArgs.join(' ');
         }
 
-        // Expose active models from /v1/models
         if (this.activeModelsData) {
             result.activeModels = this.activeModelsData;
-        }
-
-        // Expose server props
-        if (this.propsData) {
-            result.props = this.propsData;
-        }
-
-        // Add active preset info and expanded per-model effective args
-        if (this._currentConfig?.activePresetId) {
-            try {
-                const presetManager = new PresetManager();
-                const preset = presetManager.getPreset(this._currentConfig.activePresetId);
-                result.activePreset = preset;
-
-                // Build per-model effective args (what really ends up running)
-                if (preset && preset.models) {
-                    result.effectiveArgsByModel = {};
-                    for (const model of preset.models) {
-                        result.effectiveArgsByModel[model.identifier] = this._buildEffectiveArgsForModel(model);
-                    }
-                }
-            } catch (e) {
-                // Ignore errors loading preset
-            }
         }
 
         return result;

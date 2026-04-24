@@ -27,14 +27,11 @@ export const pauseDownload = (id) => api(`/api/downloads/${id}/pause`, { method:
 export const resumeDownload = (id) => api(`/api/downloads/${id}/resume`, { method: 'POST' })
 export const stopDownload = (id) => api(`/api/downloads/${id}/stop`, { method: 'POST' })
 
-export const getPresets = () => api('/api/presets')
-export const getPreset = (id) => api(`/api/presets/${id}`)
-export const createPreset = (data) => api('/api/presets', { method: 'POST', body: JSON.stringify(data) })
-export const updatePreset = (id, data) => api(`/api/presets/${id}`, { method: 'PUT', body: JSON.stringify(data) })
-export const deletePreset = (id) => api(`/api/presets/${id}`, { method: 'DELETE' })
-export const activatePreset = (id) => api(`/api/presets/${id}/activate`, { method: 'POST' })
-export const deactivatePreset = () => api('/api/presets/deactivate', { method: 'POST' })
-
 export const browseDirectory = () => fetch('/api/browse-directory').then(r => r.json())
 
 export const getLogs = (n = 200) => api(`/api/logs?n=${n}`)
+
+export const getPresets = () => api('/api/presets')
+export const savePreset = (preset) => api('/api/presets', { method: 'POST', body: JSON.stringify(preset) })
+export const deletePreset = (id) => api(`/api/presets/${id}`, { method: 'DELETE' })
+export const applyPreset = (id) => api(`/api/presets/apply/${id}`, { method: 'POST' })

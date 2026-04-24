@@ -47,8 +47,6 @@ export default function ModelsPage() {
     }
   }
 
-  const cardCls = 'flex items-center justify-between bg-[var(--bg-card)] border border-[var(--border)] rounded-[10px] p-4 transition-all hover:border-[var(--border-light)] hover:shadow-[var(--shadow-card-hover)]'
-
   return (
     <div>
       <PageHeader title="Local Models">
@@ -65,7 +63,7 @@ export default function ModelsPage() {
       ) : (
         <div className="flex flex-col gap-2.5">
           {models.map(m => (
-            <div key={m.name} className={cardCls}>
+            <div key={m.name} className="flex items-center justify-between bg-[var(--bg-card)] border border-[var(--border)] rounded-[10px] p-4 transition-all hover:shadow-[var(--shadow-card-hover)] hover:border-[var(--border-light)]">
               <div className="flex flex-col gap-1 min-w-0 flex-1">
                 <div className="flex items-center gap-3 flex-wrap">
                   <span className="font-semibold text-[var(--text-primary)] text-sm">{m.name}</span>

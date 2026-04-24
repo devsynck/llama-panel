@@ -3,14 +3,12 @@ import { getConfig, saveConfig, browseDirectory } from '../../api/client'
 import { useToast } from '../../context/ToastContext'
 import PageHeader from '../ui/PageHeader'
 import Button from '../ui/Button'
-import Toggle from '../ui/Toggle'
 import { Save } from 'lucide-react'
 
 export default function ConfigPage() {
   const { addToast } = useToast()
   const [cfg, setCfg] = useState({
     host: '', port: 8080, apiKey: '', extraArgs: '', modelsDir: '', managerPort: 7654,
-    contBatching: false, mlock: false, mmap: false, cachePrompt: false, metrics: false, slots: false,
   })
   const [saving, setSaving] = useState(false)
 
@@ -94,26 +92,6 @@ export default function ConfigPage() {
               </div>
               <span className="text-xs text-[var(--text-dim)]">Set the folder where your .gguf model files are stored</span>
             </label>
-          </div>
-        </div>
-
-        <div className={sectionCls}>
-          <h3 className={headingCls}>Options</h3>
-          <div className="flex gap-8 flex-wrap">
-            <div className="flex-1 min-w-[300px]">
-              <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3.5">
-                <Toggle checked={cfg.contBatching} onChange={v => update('contBatching', v.target.checked)} label="Continuous Batching" />
-                <Toggle checked={cfg.mlock} onChange={v => update('mlock', v.target.checked)} label="Memory Lock (mlock)" />
-                <Toggle checked={cfg.mmap} onChange={v => update('mmap', v.target.checked)} label="Memory Map (mmap)" />
-                <Toggle checked={cfg.cachePrompt} onChange={v => update('cachePrompt', v.target.checked)} label="Prompt Caching" />
-              </div>
-            </div>
-            <div className="flex-1 min-w-[300px]">
-              <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3.5">
-                <Toggle checked={cfg.metrics} onChange={v => update('metrics', v.target.checked)} label="Enable Metrics" />
-                <Toggle checked={cfg.slots} onChange={v => update('slots', v.target.checked)} label="Enable Slots Endpoint" />
-              </div>
-            </div>
           </div>
         </div>
 

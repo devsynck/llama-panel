@@ -16,12 +16,8 @@ const DEFAULT_CONFIG = {
   ubatchSize: 0,
   gpuLayers: 99,
   flashAttn: 'on',
-  contBatching: false,
-  mlock: false,
-  mmap: false,
-  cachePrompt: false,
-  metrics: true,
-  slots: true,
+  fit: true,
+  noMmap: false,
   cacheTypeK: '',
   cacheTypeV: '',
   splitMode: '',
@@ -30,16 +26,12 @@ const DEFAULT_CONFIG = {
   topP: 0.95,
   minP: 0.05,
   repeatPenalty: 1.0,
+  presencePenalty: 0.0,
   apiKey: '',
   extraArgs: '',
   modelsDir: MODELS_DIR,
   managerPort: 7654,
-  // Preset mode configuration
-  modelsPresetPath: '',
-
-  activePresetId: null,
-  // Logging options
-  logDisable: true,
+  logDisable: false,
 };
 
 function ensureDirs() {

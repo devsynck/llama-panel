@@ -15,7 +15,8 @@
       "Read(//d/Projects/llama-panel/**)",
       "Bash(pkill -f \"vite\")",
       "Bash(npx kill-port *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(node *)"
     ]
   }
 }

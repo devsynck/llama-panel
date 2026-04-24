@@ -1,15 +1,13 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutGrid, MessageSquare, Settings, Box, FileText, Download, Sun, Moon } from 'lucide-react'
+import { LayoutGrid, Settings, Box, Download, Sun, Moon } from 'lucide-react'
 import { toggleTheme, getTheme } from '../../hooks/useTheme'
 import { useStatus } from '../../context/StatusContext'
 import { useState } from 'react'
 
 const navItems = [
   { to: '/', icon: LayoutGrid, label: 'Dashboard', end: true },
-  { to: '/chat', icon: MessageSquare, label: 'Chat' },
   { to: '/config', icon: Settings, label: 'Configuration' },
   { to: '/models', icon: Box, label: 'Models' },
-  { to: '/presets', icon: FileText, label: 'Presets' },
   { to: '/download', icon: Download, label: 'Download' },
 ]
 

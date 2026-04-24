@@ -5,15 +5,11 @@ const StatusContext = createContext(null)
 const initialState = {
   status: 'stopped',
   uptime: 0,
-  slots: [],
-  metrics: null,
   health: null,
   sysInfo: null,
   config: null,
   activeModels: [],
   downloads: [],
-  activePreset: null,
-  effectiveArgsByModel: {},
   serverArgs: '',
 }
 
