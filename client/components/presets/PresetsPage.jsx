@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useReducer } from 'react'
-import { getPresets, getPreset, createPreset, updatePreset, deletePreset, activatePreset, deactivatePreset, getModels } from '../../api/client'
+import { getPresets, getPreset, createPreset, updatePreset, deletePreset, activatePreset, deactivatePreset, getModels, getConfig } from '../../api/client'
 import { useToast } from '../../context/ToastContext'
 import PageHeader from '../ui/PageHeader'
 import Button from '../ui/Button'
@@ -7,6 +7,7 @@ import Modal from '../ui/Modal'
 import Tag from '../ui/Tag'
 import EmptyState from '../ui/EmptyState'
 import ConfirmDialog from '../ui/ConfirmDialog'
+import Toggle from '../ui/Toggle'
 import { Plus, Database, Trash2 } from 'lucide-react'
 
 const emptyModel = () => ({
@@ -56,14 +57,16 @@ export default function PresetsPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [confirm, setConfirm] = useState(null)
   const [availableModels, setAvailableModels] = useState([])
+  const [activePresetId, setActivePresetId] = useState(null)
   const [form, dispatch] = useReducer(presetReducer, initialState)
 
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      const [presetsData, modelsData] = await Promise.all([getPresets(), getModels()])
+      const [presetsData, modelsData, cfg] = await Promise.all([getPresets(), getModels(), getConfig()])
       setPresets(Array.isArray(presetsData) ? presetsData : [])
       setAvailableModels(Array.isArray(modelsData) ? modelsData : [])
+      setActivePresetId(cfg?.activePresetId || null)
     } catch (err) {
       addToast('Failed to load presets', 'error')
     }
@@ -114,9 +117,12 @@ export default function PresetsPage() {
     catch (err) { addToast('Failed to activate: ' + err.message, 'error') }
   }
 
-  const cardCls = 'bg-[var(--bg-card)] border border-[var(--border)] rounded-[10px] p-4 transition-all hover:border-[var(--border-light)] hover:shadow-[var(--shadow-card-hover)]'
-  const inputCls = 'bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border)] rounded-md px-2.5 py-2 text-sm outline-none transition-colors focus:border-[var(--accent)] focus:shadow-[0_0_0_3px_var(--accent-glow)] placeholder:text-[var(--text-dim)]'
-  const selectCls = 'bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border)] rounded-md px-2.5 py-2 text-sm outline-none appearance-none cursor-pointer transition-colors focus:border-[var(--accent)]'
+  const handleDeactivate = async () => {
+    try { await deactivatePreset(); addToast('Preset deactivated.', 'info'); refresh() }
+    catch (err) { addToast('Failed to deactivate: ' + err.message, 'error') }
+  }
+
+  const cardCls = 'bg-[var(--bg-card)] border border-[var(--border)] rounded-[10px] p-4 transition-all hover:shadow-[var(--shadow-card-hover)]'
 
   return (
     <div>
@@ -130,11 +136,14 @@ export default function PresetsPage() {
         <EmptyState>No presets found. Create a new preset to manage multiple models.</EmptyState>
       ) : (
         <div className="flex flex-col gap-3">
-          {presets.map(p => (
-            <div key={p.id} className={cardCls}>
+          {presets.map(p => {
+            const isActive = activePresetId === p.id
+            return (
+            <div key={p.id} className={`${cardCls} ${isActive ? 'border-[var(--success)]/40 bg-[var(--success-bg)]' : 'hover:border-[var(--border-light)]'}`}>
               <div className="flex items-start justify-between gap-4">
                 <div className="flex flex-col gap-1">
                   <div className="flex items-center gap-2 flex-wrap">
+                    {isActive && <span className="px-1.5 py-0.5 rounded text-[0.6rem] font-bold uppercase tracking-wider bg-[var(--success)] text-white leading-none">Active</span>}
                     <span className="font-semibold text-[var(--text-primary)] text-sm">{p.name}</span>
                     <div className="inline-flex items-center gap-3 text-xs text-[var(--text-dim)] font-normal">
                       <span>{p.updatedAt ? new Date(p.updatedAt).toLocaleDateString() : 'N/A'}</span>
@@ -144,7 +153,10 @@ export default function PresetsPage() {
                   <span className="text-xs text-[var(--text-muted)]">{p.description || 'No description'}</span>
                 </div>
                 <div className="flex gap-2 shrink-0">
-                  <Button variant="success" size="sm" onClick={() => handleActivate(p.id)}>Activate</Button>
+                  {isActive
+                    ? <Button variant="secondary" size="sm" onClick={handleDeactivate}>Deactivate</Button>
+                    : <Button variant="success" size="sm" onClick={() => handleActivate(p.id)}>Activate</Button>
+                  }
                   <Button variant="secondary" size="sm" onClick={() => openEdit(p.id)}>Edit</Button>
                   <Button variant="danger" size="sm" onClick={() => setConfirm({ id: p.id, name: p.name })}>Delete</Button>
                 </div>
@@ -167,7 +179,7 @@ export default function PresetsPage() {
                 </div>
               )}
             </div>
-          ))}
+          )})}
         </div>
       )}
 
@@ -191,7 +203,7 @@ export default function PresetsPage() {
             <h4 className="text-sm font-semibold mb-3 text-[var(--text-primary)]">Models</h4>
             <div className="flex flex-col gap-3">
               {form.models.map((model, idx) => (
-                <PresetModelRow key={idx} model={model} index={idx} availableModels={availableModels} dispatch={dispatch} inputCls={inputCls} selectCls={selectCls} />
+                <PresetModelRow key={idx} model={model} index={idx} availableModels={availableModels} dispatch={dispatch} />
               ))}
             </div>
             <Button variant="secondary" size="sm" onClick={() => dispatch({ type: 'ADD_MODEL' })} className="mt-3">
@@ -215,13 +227,16 @@ export default function PresetsPage() {
   )
 }
 
-function PresetModelRow({ model, index, availableModels, dispatch, inputCls, selectCls }) {
+const inputCls = 'bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border)] rounded-md px-2.5 py-2 text-sm outline-none transition-colors focus:border-[var(--accent)] focus:shadow-[0_0_0_3px_var(--accent-glow)] placeholder:text-[var(--text-dim)]'
+const selectCls = 'bg-[var(--bg-input)] text-[var(--text-primary)] border border-[var(--border)] rounded-md px-2.5 py-2 text-sm outline-none appearance-none cursor-pointer transition-colors focus:border-[var(--accent)]'
+
+function PresetModelRow({ model, index, availableModels, dispatch }) {
   const update = (field, value) => dispatch({ type: 'UPDATE_MODEL', index, field, value })
-  const gridCls = 'grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-3'
 
   return (
-    <div className="flex flex-col p-4 bg-[var(--bg-input)] border border-[var(--border)] rounded-md gap-4">
-      <div className="flex items-start gap-2.5 pb-3 border-b border-[var(--border)]">
+    <div className="flex flex-col p-4 bg-[var(--bg-input)] border border-[var(--border)] rounded-md gap-5">
+      {/* Model identity */}
+      <div className="flex items-start gap-2.5 pb-4 border-b border-[var(--border)]">
         <label className="flex flex-col gap-1 flex-1">
           <span className="text-[0.65rem] text-[var(--text-dim)]">Identifier *</span>
           <input className={inputCls} value={model.identifier} onChange={e => update('identifier', e.target.value)} placeholder="llama-2-7b" />
@@ -238,47 +253,15 @@ function PresetModelRow({ model, index, availableModels, dispatch, inputCls, sel
         </button>
       </div>
 
-      <Section title="Server Arguments">
-        <div className={gridCls}>
-          <Field label="Context Size" inputCls={inputCls} value={model.ctxSize} onChange={v => update('ctxSize', v)} placeholder="4096" type="number" />
-          <Field label="GPU Layers" inputCls={inputCls} value={model.gpuLayers} onChange={v => update('gpuLayers', v)} placeholder="99 or auto" />
-          <Field label="Threads" inputCls={inputCls} value={model.threads} onChange={v => update('threads', v)} placeholder="-1" type="number" />
-          <Field label="Threads Batch" inputCls={inputCls} value={model.threadsBatch} onChange={v => update('threadsBatch', v)} placeholder="-1" type="number" />
-          <Field label="Batch Size" inputCls={inputCls} value={model.batchSize} onChange={v => update('batchSize', v)} placeholder="2048" type="number" />
-          <Field label="Micro Batch" inputCls={inputCls} value={model.ubatchSize} onChange={v => update('ubatchSize', v)} placeholder="512" type="number" />
-          <SelectField label="Flash Attention" selectCls={selectCls} value={model.flashAttn} onChange={v => update('flashAttn', v)} options={['', 'on', 'off', 'auto']} labels={['Default', 'On', 'Off', 'Auto']} />
-          <SelectField label="Split Mode" selectCls={selectCls} value={model.splitMode} onChange={v => update('splitMode', v)} options={['', 'layer', 'row', 'none']} labels={['Default', 'Layer', 'Row', 'None']} />
-        </div>
-      </Section>
-
-      <Section title="Memory Options">
-        <div className={gridCls}>
-          <SelectField label="Cache K" selectCls={selectCls} value={model.cacheTypeK} onChange={v => update('cacheTypeK', v)}
-            options={['none', 'q4_0', 'q8_0', 'f16', 'bf16', 'f32']}
-            labels={['default (f16)', 'q4_0 (recommended)', 'q8_0', 'f16', 'bf16', 'f32']} />
-          <SelectField label="Cache V" selectCls={selectCls} value={model.cacheTypeV} onChange={v => update('cacheTypeV', v)}
-            options={['none', 'q4_0', 'q8_0', 'f16', 'bf16', 'f32']}
-            labels={['default (f16)', 'q4_0 (recommended)', 'q8_0', 'f16', 'bf16', 'f32']} />
-        </div>
-        <div className="px-3 py-2 bg-[var(--warning-bg)] border border-[var(--warning)]/20 rounded-md text-[0.72rem] text-[var(--warning)] leading-relaxed">
-          q4_0 reduces KV cache VRAM by ~4x — critical for large context (32k+).
-        </div>
-        <div className="flex flex-wrap gap-x-6 gap-y-2 pt-1">
-          <Checkbox label="Memory Lock (mlock)" checked={model.mlock} onChange={v => update('mlock', v)} />
-          <Checkbox label="Memory Map (mmap)" checked={model.mmap} onChange={v => update('mmap', v)} />
-          <Checkbox label="Prompt Caching" checked={model.cachePrompt} onChange={v => update('cachePrompt', v)} />
-          <Checkbox label="Load MMProj" checked={model.loadMmproj} onChange={v => update('loadMmproj', v)} />
-        </div>
-      </Section>
-
+      {/* Generation Parameters (top) */}
       <Section title="Generation Parameters">
-        <div className={gridCls}>
-          <Field label="Temperature" inputCls={inputCls} value={model.temp} onChange={v => update('temp', v)} placeholder="0.8" type="number" step="0.1" />
-          <Field label="Top K" inputCls={inputCls} value={model.topK} onChange={v => update('topK', v)} placeholder="40" type="number" />
-          <Field label="Top P" inputCls={inputCls} value={model.topP} onChange={v => update('topP', v)} placeholder="0.9" type="number" step="0.01" />
-          <Field label="Min P" inputCls={inputCls} value={model.minP} onChange={v => update('minP', v)} placeholder="0.05" type="number" step="0.01" />
-          <Field label="Repeat Penalty" inputCls={inputCls} value={model.repeatPenalty} onChange={v => update('repeatPenalty', v)} placeholder="1.1" type="number" step="0.1" />
-          <Field label="Presence Penalty" inputCls={inputCls} value={model.presencePenalty} onChange={v => update('presencePenalty', v)} placeholder="0.0" type="number" step="0.1" />
+        <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+          <SliderField label="Temperature" value={model.temp} onChange={v => update('temp', v)} min={0} max={2} step={0.1} placeholder="0.8" />
+          <SliderField label="Top K" value={model.topK} onChange={v => update('topK', v)} min={0} max={200} step={1} placeholder="40" />
+          <SliderField label="Top P" value={model.topP} onChange={v => update('topP', v)} min={0} max={1} step={0.01} placeholder="0.9" />
+          <SliderField label="Min P" value={model.minP} onChange={v => update('minP', v)} min={0} max={1} step={0.01} placeholder="0.05" />
+          <SliderField label="Repeat Penalty" value={model.repeatPenalty} onChange={v => update('repeatPenalty', v)} min={0} max={2} step={0.1} placeholder="1.1" />
+          <SliderField label="Presence Penalty" value={model.presencePenalty} onChange={v => update('presencePenalty', v)} min={0} max={2} step={0.1} placeholder="0.0" />
         </div>
         <label className="flex flex-col gap-1 max-w-[220px]">
           <span className="text-[0.65rem] text-[var(--text-dim)]">Thinking Mode</span>
@@ -289,20 +272,84 @@ function PresetModelRow({ model, index, availableModels, dispatch, inputCls, sel
           </select>
         </label>
       </Section>
+
+      {/* Server Arguments */}
+      <Section title="Server Arguments">
+        <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+          <SliderField label="Context Size" value={model.ctxSize} onChange={v => update('ctxSize', v)} min={512} max={131072} step={512} placeholder="4096" />
+          <SliderField label="GPU Layers" value={model.gpuLayers} onChange={v => update('gpuLayers', v)} min={0} max={200} step={1} placeholder="99" />
+          <SliderField label="Batch Size" value={model.batchSize} onChange={v => update('batchSize', v)} min={1} max={8192} step={1} placeholder="2048" />
+          <SliderField label="Micro Batch" value={model.ubatchSize} onChange={v => update('ubatchSize', v)} min={1} max={4096} step={1} placeholder="512" />
+          <Field label="Threads" value={model.threads} onChange={v => update('threads', v)} placeholder="-1" type="number" />
+          <Field label="Threads Batch" value={model.threadsBatch} onChange={v => update('threadsBatch', v)} placeholder="-1" type="number" />
+          <SelectField label="Flash Attention" value={model.flashAttn} onChange={v => update('flashAttn', v)} options={['', 'on', 'off', 'auto']} labels={['Default', 'On', 'Off', 'Auto']} />
+          <SelectField label="Split Mode" value={model.splitMode} onChange={v => update('splitMode', v)} options={['', 'layer', 'row', 'none']} labels={['Default', 'Layer', 'Row', 'None']} />
+        </div>
+      </Section>
+
+      {/* Memory Options */}
+      <Section title="Memory Options">
+        <div className="grid grid-cols-2 gap-x-6 gap-y-4">
+          <SelectField label="Cache K" value={model.cacheTypeK} onChange={v => update('cacheTypeK', v)}
+            options={['none', 'q4_0', 'q8_0', 'f16', 'bf16', 'f32']}
+            labels={['default (f16)', 'q4_0 (recommended)', 'q8_0', 'f16', 'bf16', 'f32']} />
+          <SelectField label="Cache V" value={model.cacheTypeV} onChange={v => update('cacheTypeV', v)}
+            options={['none', 'q4_0', 'q8_0', 'f16', 'bf16', 'f32']}
+            labels={['default (f16)', 'q4_0 (recommended)', 'q8_0', 'f16', 'bf16', 'f32']} />
+        </div>
+        <div className="px-3 py-2 bg-[var(--warning-bg)] border border-[var(--warning)]/20 rounded-md text-[0.72rem] text-[var(--warning)] leading-relaxed">
+          q4_0 reduces KV cache VRAM by ~4x — critical for large context (32k+).
+        </div>
+        <div className="flex flex-wrap gap-x-6 gap-y-3 pt-1">
+          <Toggle size="sm" label="Memory Lock (mlock)" checked={model.mlock} onChange={e => update('mlock', e.target.checked)} />
+          <Toggle size="sm" label="Memory Map (mmap)" checked={model.mmap} onChange={e => update('mmap', e.target.checked)} />
+          <Toggle size="sm" label="Prompt Caching" checked={model.cachePrompt} onChange={e => update('cachePrompt', e.target.checked)} />
+          <Toggle size="sm" label="Load MMProj" checked={model.loadMmproj} onChange={e => update('loadMmproj', e.target.checked)} />
+        </div>
+      </Section>
     </div>
   )
 }
 
 function Section({ title, children }) {
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
       <span className="text-[0.68rem] font-semibold text-[var(--text-muted)] uppercase tracking-wider">{title}</span>
       <div className="flex flex-col gap-3">{children}</div>
     </div>
   )
 }
 
-function Field({ label, inputCls, value, onChange, placeholder, type = 'text', step }) {
+function SliderField({ label, value, onChange, min, max, step, placeholder }) {
+  const numVal = value !== '' ? parseFloat(value) : NaN
+  const sliderVal = isNaN(numVal) ? min : Math.max(min, Math.min(max, numVal))
+
+  return (
+    <label className="flex flex-col gap-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[0.65rem] text-[var(--text-dim)]">{label}</span>
+        <input
+          className="w-16 bg-[var(--bg-card)] text-[var(--text-primary)] border border-[var(--border)] rounded px-1.5 py-0.5 text-xs text-right outline-none focus:border-[var(--accent)] transition-colors"
+          type="number"
+          step={step}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder={placeholder}
+        />
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={sliderVal}
+        onChange={e => onChange(e.target.value)}
+      />
+    </label>
+  )
+}
+
+function Field({ label, value, onChange, placeholder, type = 'text', step }) {
   return (
     <label className="flex flex-col gap-1">
       <span className="text-[0.65rem] text-[var(--text-dim)]">{label}</span>
@@ -311,22 +358,13 @@ function Field({ label, inputCls, value, onChange, placeholder, type = 'text', s
   )
 }
 
-function SelectField({ label, selectCls, value, onChange, options, labels }) {
+function SelectField({ label, value, onChange, options, labels }) {
   return (
     <label className="flex flex-col gap-1">
       <span className="text-[0.65rem] text-[var(--text-dim)]">{label}</span>
       <select className={selectCls} value={value} onChange={e => onChange(e.target.value)}>
         {options.map((opt, i) => <option key={opt} value={opt}>{labels?.[i] || opt}</option>)}
       </select>
-    </label>
-  )
-}
-
-function Checkbox({ label, checked, onChange }) {
-  return (
-    <label className="inline-flex items-center gap-2 cursor-pointer select-none text-sm text-[var(--text-primary)]">
-      <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} className="w-4 h-4 accent-[var(--accent)]" />
-      <span>{label}</span>
     </label>
   )
 }
