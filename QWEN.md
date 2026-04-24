@@ -39,7 +39,7 @@ llama-panel/
 
 - **Server Management**: Start/stop/restart llama-server with one click
 - **Visual Configuration**: GUI for context size, threads, batch sizes, GPU layers, flash attention
-- **Preset Mode**: Multi-model configurations with per-model generation parameters
+- **Preset Mode**: Multi-model configurations with per-model generation parameters (active by default when a preset is selected)
 - **Model Downloader**: Hugging Face search and download with multi-part model handling
 - **Real-time Monitoring**: Live stats, slot utilization, context usage, GPU metrics
 - **Log Viewer**: Organized log display with spam filtering
@@ -132,7 +132,7 @@ npm run release:major
 | POST | `/api/presets` | Create preset |
 | PUT | `/api/presets/:id` | Update preset |
 | DELETE | `/api/presets/:id` | Delete preset |
-| POST | `/api/presets/:id/activate` | Activate preset mode |
+| POST | `/api/presets/:id/activate` | Activate preset |
 | GET | `/api/logs` | Get recent logs |
 | WS | `/ws` | Real-time logs and status updates |
 
@@ -155,12 +155,12 @@ npm run release:major
 
 ### Preset Mode
 
-Preset mode allows multi-model configurations stored as INI files. When enabled:
+Preset mode allows multi-model configurations stored as INI files. When a preset is activated:
 
-1. Config sets `usePresetMode: true` and `modelsPresetPath: <path>`
-2. `llama-manager.js` passes `--models-preset <path>` to llama-server
+1. Config sets `modelsPresetPath: <path>` and `activePresetId: <id>`
+2. `llama-manager.js` automatically detects the preset path and passes `--models-preset <path>` to llama-server
 3. Per-model args (ctx-size, n-gpu-layers, temperature, etc.) are defined in the preset INI
-4. Server-level args (host, port, threads) come from the main config
+4. Server-level args (host, port, parallel) come from the main config
 
 ### Hot-swap Behavior
 

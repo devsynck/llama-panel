@@ -16,7 +16,6 @@ const DEFAULT_CONFIG = {
   ubatchSize: 0,
   gpuLayers: 99,
   flashAttn: 'on',
-  parallel: 1, // --models-max 1 ? Assuming --np 1
   contBatching: false,
   mlock: false,
   mmap: false,
@@ -37,14 +36,10 @@ const DEFAULT_CONFIG = {
   managerPort: 7654,
   // Preset mode configuration
   modelsPresetPath: '',
-  usePresetMode: false,
+
   activePresetId: null,
   // Logging options
   logDisable: true,
-  // Advanced server features
-  jinja: false,
-  enableProps: false,
-  sleepIdleSeconds: 0,
 };
 
 function ensureDirs() {

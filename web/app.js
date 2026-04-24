@@ -60,14 +60,6 @@ function handleWSMessage(msg) {
         case 'status':
             updateDashboard(msg.data);
             break;
-        case 'log':
-            appendLog(msg.data);
-            break;
-        case 'logs:history':
-            for (const entry of msg.data) {
-                appendLog(entry);
-            }
-            break;
         case 'downloads':
             updateDownloadsList(msg.data);
             break;
@@ -95,6 +87,20 @@ function updateDashboard(data) {
     const indicatorText = document.querySelector('.indicator-text');
     dot.className = 'indicator-dot ' + (s.class || '');
     indicatorText.textContent = s.text;
+
+    // Update active model in chat
+    const chatModelName = document.getElementById('chat-active-model-name');
+    if (chatModelName && data.config) {
+        let name = 'None';
+        if (data.status === 'running') {
+            if (data.config.modelsPresetPath) {
+                name = data.config.modelsPresetPath.split(/[/\\]/).pop().replace('.json', '');
+            } else if (data.config.modelPath) {
+                name = data.config.modelPath.split(/[/\\]/).pop();
+            }
+        }
+        chatModelName.textContent = name;
+    }
 
     // Buttons
     const btnStart = document.getElementById('btn-start');
@@ -525,8 +531,7 @@ function populateConfigForm(cfg) {
     // Text/number inputs
     const fields = [
         'host', 'port', 'apiKey',
-        'extraArgs', 'modelsDir', 'managerPort', 'modelsPresetPath',
-        'parallel', 'sleepIdleSeconds'
+        'extraArgs', 'modelsDir', 'managerPort'
     ];
     for (const field of fields) {
         const el = document.getElementById(`cfg-${field}`);
@@ -536,8 +541,7 @@ function populateConfigForm(cfg) {
     }
 
     // Checkboxes
-    const toggles = ['contBatching', 'mlock', 'mmap', 'cachePrompt', 'metrics', 'slots',
-        'usePresetMode', 'logDisable', 'jinja', 'enableProps'];
+    const toggles = ['contBatching', 'mlock', 'mmap', 'cachePrompt', 'metrics', 'slots'];
     for (const field of toggles) {
         const el = document.getElementById(`cfg-${field}`);
         if (el && cfg[field] !== undefined) {
@@ -560,13 +564,6 @@ async function saveConfig() {
         extraArgs: document.getElementById('cfg-extraArgs').value,
         modelsDir: document.getElementById('cfg-modelsDir').value,
         managerPort: parseInt(document.getElementById('cfg-managerPort').value) || 7654,
-        usePresetMode: document.getElementById('cfg-usePresetMode').checked,
-        modelsPresetPath: document.getElementById('cfg-modelsPresetPath').value,
-        logDisable: document.getElementById('cfg-logDisable').checked,
-        parallel: parseInt(document.getElementById('cfg-parallel')?.value) || 1,
-        sleepIdleSeconds: parseInt(document.getElementById('cfg-sleepIdleSeconds')?.value) || 0,
-        jinja: document.getElementById('cfg-jinja')?.checked || false,
-        enableProps: document.getElementById('cfg-enableProps')?.checked || false,
     };
 
     try {
@@ -624,13 +621,13 @@ async function refreshModels() {
             return `
       <div class="model-item">
         <div class="model-info">
-          <div class="model-name">
-            ${escapeHtml(m.name)}
-            ${badges.length > 0 ? '<div style="display:flex;gap:6px;margin-top:4px;">' + badges.join('') + '</div>' : ''}
-          </div>
-          <div class="model-meta">
-            <span>📦 ${m.sizeHuman}</span>
-            <span>📅 ${new Date(m.modified).toLocaleDateString()}</span>
+          <div class="model-name-row">
+            <span class="model-name-text">${escapeHtml(m.name)}</span>
+            <div class="model-meta-inline">
+              ${badges.join('')}
+              <span class="meta-item">📦 ${m.sizeHuman}</span>
+              <span class="meta-item">📅 ${new Date(m.modified).toLocaleDateString()}</span>
+            </div>
           </div>
         </div>
         <div class="model-actions">
@@ -875,47 +872,6 @@ async function stopDownload(id) {
     }
 }
 
-// ============ Logs ============
-
-function appendLog(entry) {
-    const container = document.getElementById('log-container');
-
-    // Remove empty state if present
-    const emptyState = container.querySelector('.empty-state');
-    if (emptyState) emptyState.remove();
-
-    const line = document.createElement('div');
-    line.className = 'log-line';
-
-    // Classify logs
-    if (entry.text.startsWith('[Manager]')) {
-        line.classList.add('manager');
-    } else if (/error|Error|ERROR|failed|Failed/.test(entry.text)) {
-        line.classList.add('error');
-    } else if (/warn|Warn|WARN/.test(entry.text)) {
-        line.classList.add('warn');
-    }
-
-    const ts = new Date(entry.ts).toLocaleTimeString();
-    line.innerHTML = `<span class="log-ts">${ts}</span>${escapeHtml(entry.text)}`;
-    container.appendChild(line);
-
-    // Keep max lines in DOM for memory efficiency
-    while (container.children.length > 500) {
-        container.removeChild(container.firstChild);
-    }
-
-    // Auto-scroll
-    const autoScroll = document.getElementById('log-autoscroll');
-    if (autoScroll && autoScroll.checked) {
-        container.scrollTop = container.scrollHeight;
-    }
-}
-
-function clearLogView() {
-    const container = document.getElementById('log-container');
-    container.innerHTML = '<div class="empty-state">Logs cleared. New logs will appear here.</div>';
-}
 
 // ============ Helpers ============
 
@@ -1004,89 +960,6 @@ function updateActiveModels(activeModels) {
     `).join('');
 }
 
-// ============ Live Props ============
-
-function showPropsModal() {
-    const modal = document.getElementById('props-modal');
-    if (!modal) return;
-
-    // Reset thinking radio to default
-    const thinkingDefault = document.getElementById('props-thinking-default');
-    if (thinkingDefault) thinkingDefault.checked = true;
-
-    // Pre-fill with current props if available
-    const props = currentStatus.props;
-    if (props) {
-        const sysprompt = document.getElementById('props-system-prompt');
-        const assistantName = document.getElementById('props-assistant-name');
-        if (sysprompt && props.default_generation_settings?.system_prompt !== undefined) {
-            sysprompt.value = props.default_generation_settings.system_prompt || '';
-        }
-        if (assistantName && props.assistant_name) {
-            assistantName.value = props.assistant_name;
-        }
-        // Restore thinking state from current props
-        if (props.enable_thinking === true && document.getElementById('props-thinking-on')) document.getElementById('props-thinking-on').checked = true;
-        if (props.enable_thinking === false && document.getElementById('props-thinking-off')) document.getElementById('props-thinking-off').checked = true;
-    }
-
-    // Show notice if --props isn't enabled
-    const notice = document.getElementById('props-notice');
-    if (notice) {
-        const enableProps = currentStatus.config?.enableProps;
-        notice.style.display = enableProps ? 'none' : 'flex';
-    }
-
-    modal.style.display = 'flex';
-}
-
-function closePropsModal() {
-    const modal = document.getElementById('props-modal');
-    if (modal) modal.style.display = 'none';
-}
-
-async function applyProps() {
-    const btn = document.getElementById('btn-apply-props');
-    const systemPrompt = document.getElementById('props-system-prompt')?.value;
-    const assistantName = document.getElementById('props-assistant-name')?.value;
-    const thinkingRadio = document.querySelector('input[name="props-thinking"]:checked')?.value;
-
-    if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Applying...'; }
-
-    try {
-        const payload = {};
-        if (systemPrompt !== undefined) payload.system_prompt = systemPrompt;
-        if (assistantName) payload.assistant_name = assistantName;
-
-        // Send enable_thinking top-level (direct API compat)
-        // AND as chat_template_kwargs (what llama-server /props understands for Jinja templates)
-        // Ref: https://unsloth.ai/docs/models/qwen3.5#how-to-enable-or-disable-reasoning-and-thinking
-        if (thinkingRadio === 'true' || thinkingRadio === 'false') {
-            const val = thinkingRadio === 'true';
-            payload.enable_thinking = val;
-            payload.chat_template_kwargs = { enable_thinking: val };
-        }
-        // 'default' = omit entirely
-
-        const res = await fetch('/api/props', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
-        showToast('Prompt injected successfully!', 'success');
-        closePropsModal();
-    } catch (err) {
-        showToast('Failed: ' + err.message, 'error');
-    } finally {
-        if (btn) {
-            btn.disabled = false;
-            btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="20 6 9 17 4 12"/></svg> Apply Now';
-        }
-    }
-}
-
 // ============ Presets ============
 
 let currentEditingPresetId = null;
@@ -1139,9 +1012,12 @@ async function refreshPresets() {
             fetch('/api/models'),
         ]);
 
-        const presets = await presetsRes.json();
+        let presets = await presetsRes.json();
         const cfg = await configRes.json();
-        const models = await modelsRes.json();
+        let models = await modelsRes.json();
+
+        if (!Array.isArray(presets)) presets = [];
+        if (!Array.isArray(models)) models = [];
 
         // Create a map of model paths to their size info for quick lookup
         const modelSizes = new Map();
@@ -1149,20 +1025,6 @@ async function refreshPresets() {
             modelSizes.set(m.path, m.sizeHuman);
         });
 
-        // Update active preset banner
-        if (cfg.usePresetMode && cfg.activePresetId) {
-            const activePreset = presets.find(p => p.id === cfg.activePresetId);
-            if (activePreset) {
-                document.getElementById('active-preset-name').textContent = activePreset.name;
-                document.getElementById('active-preset-models').textContent =
-                    `${activePreset.models.length} model${activePreset.models.length > 1 ? 's' : ''}`;
-                banner.style.display = 'flex';
-            } else {
-                banner.style.display = 'none';
-            }
-        } else {
-            banner.style.display = 'none';
-        }
 
         if (presets.length === 0) {
             container.innerHTML = '<div class="empty-state">No presets found. Create a new preset to manage multiple models.</div>';
@@ -1174,21 +1036,29 @@ async function refreshPresets() {
             const activeBadge = isActive ? '<span class="tag" style="background:var(--success-bg);color:var(--success)">Active</span>' : '';
 
             return `
-        <div class="preset-item">
+        <div class="preset-item ${isActive ? 'active' : ''}">
           <div class="preset-header">
             <div class="preset-title">
               <div class="preset-name">
                 ${escapeHtml(p.name)}
                 ${activeBadge}
+                <div class="preset-meta-inline">
+                  <span>📅 ${p.updatedAt ? new Date(p.updatedAt).toLocaleDateString() : 'N/A'}</span>
+                  <span>🧠 ${p.models ? p.models.length : 0} model${(p.models ? p.models.length : 0) !== 1 ? 's' : ''}</span>
+                </div>
               </div>
               <div class="preset-description">${escapeHtml(p.description || 'No description')}</div>
             </div>
             <div class="preset-actions">
-              ${!isActive ? `
+              ${isActive ? `
+                <button class="btn btn-sm btn-secondary" onclick="deactivatePreset()" title="Deactivate this preset">
+                  Deactivate
+                </button>
+              ` : `
                 <button class="btn btn-sm btn-success" onclick="activatePreset('${p.id}')" title="Activate this preset">
                   ✓ Activate
                 </button>
-              ` : ''}
+              `}
               <button class="btn btn-sm btn-secondary" onclick="editPreset('${p.id}')" title="Edit this preset">
                 ✏️ Edit
               </button>
@@ -1196,11 +1066,7 @@ async function refreshPresets() {
                 🗑 Delete
               </button>
             </div>
-          </div>
-          <div class="preset-meta">
-            <span>📅 ${new Date(p.updatedAt).toLocaleDateString()}</span>
-            <span>🧠 ${p.models.length} model${p.models.length > 1 ? 's' : ''}</span>
-          </div>
+          </div>${p.models && p.models.length > 0 ? `
           <div class="preset-models-list">
             ${p.models.map(m => {
               const params = [];
@@ -1227,6 +1093,7 @@ async function refreshPresets() {
             `;
             }).join('')}
           </div>
+          ` : ''}
         </div>
       `;
         }).join('');
@@ -1286,7 +1153,7 @@ function editPreset(id) {
             // Load models into editor
             const editor = document.getElementById('preset-models-editor');
             editor.innerHTML = '';
-            preset.models.forEach(model => {
+            (preset.models || []).forEach(model => {
                 addPresetModel(model);
             });
 
@@ -1310,6 +1177,7 @@ async function addPresetModel(existingModel = null) {
         try {
             const res = await fetch('/api/models');
             availableModelsForPreset = await res.json();
+            if (!Array.isArray(availableModelsForPreset)) availableModelsForPreset = [];
         } catch (err) {
             showToast('Failed to load models', 'error');
             return;
@@ -1729,3 +1597,101 @@ document.addEventListener('DOMContentLoaded', () => {
         .then(data => updateDashboard(data))
         .catch(() => { });
 });
+
+// ============ Chat ============
+
+const chatInput = document.getElementById('chat-input');
+const chatContainer = document.getElementById('chat-container');
+
+if (chatInput) {
+    chatInput.addEventListener('input', () => {
+        chatInput.style.height = 'auto';
+        chatInput.style.height = chatInput.scrollHeight + 'px';
+    });
+
+    chatInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendChatMessage();
+        }
+    });
+}
+
+async function sendChatMessage() {
+    const text = chatInput.value.trim();
+    if (!text || currentStatus.status !== 'running') return;
+
+    chatInput.value = '';
+    chatInput.style.height = 'auto';
+    
+    // Add user message
+    appendChatMessage('user', text);
+    
+    // Add assistant placeholder
+    const assistantMsg = appendChatMessage('assistant', '');
+    const bubble = assistantMsg.querySelector('.message-bubble');
+    bubble.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div>';
+
+    try {
+        const response = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                messages: [{ role: 'user', content: text }]
+            })
+        });
+
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({ error: 'Failed to connect to llama-server' }));
+            bubble.textContent = `Error: ${err.error || 'Failed to get response'}`;
+            return;
+        }
+
+        bubble.textContent = ''; // Clear indicator
+        
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fullContent = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value);
+            const lines = chunk.split('\n');
+
+            for (const line of lines) {
+                if (!line.trim() || !line.startsWith('data: ')) continue;
+                const dataStr = line.slice(6).trim();
+                if (dataStr === '[DONE]') continue;
+
+                try {
+                    const data = JSON.parse(dataStr);
+                    const content = data.choices[0]?.delta?.content || '';
+                    fullContent += content;
+                    bubble.textContent = fullContent;
+                    chatContainer.scrollTop = chatContainer.scrollHeight;
+                } catch (e) {
+                    // Ignore partial/invalid JSON
+                }
+            }
+        }
+    } catch (err) {
+        bubble.textContent = `Error: ${err.message}`;
+    }
+}
+
+function appendChatMessage(role, content) {
+    const page = document.getElementById('page-chat');
+    if (page) page.classList.remove('empty');
+
+    const msg = document.createElement('div');
+    msg.className = `chat-message ${role}`;
+    msg.innerHTML = `
+        <span class="message-author">${role === 'user' ? 'You' : 'Assistant'}</span>
+        <div class="message-bubble">${escapeHtml(content)}</div>
+    `;
+    chatContainer.appendChild(msg);
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+    return msg;
+}

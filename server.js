@@ -1,4 +1,5 @@
 const express = require('express');
+const os = require('os');
 const path = require('path');
 const { WebSocketServer } = require('ws');
 const http = require('http');
@@ -97,6 +98,43 @@ app.post('/api/hotswap', async (req, res) => {
     try {
         await llama.hotswap(modelPath);
         res.json({ ok: true, status: llama.status });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/chat', async (req, res) => {
+    const cfg = config.load();
+    const port = cfg.port || 8080;
+    const host = cfg.host || '127.0.0.1';
+
+    try {
+        const response = await fetch(`http://${host}:${port}/v1/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(cfg.apiKey ? { 'Authorization': `Bearer ${cfg.apiKey}` } : {})
+            },
+            body: JSON.stringify({
+                ...req.body,
+                stream: true
+            })
+        });
+
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({ error: 'Unknown error from llama-server' }));
+            return res.status(response.status).json(err);
+        }
+
+        // Forward the stream
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+
+        // ReadableStream to Node.js stream
+        const { Readable } = require('stream');
+        Readable.fromWeb(response.body).pipe(res);
+
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -313,7 +351,6 @@ app.post('/api/presets/:id/activate', async (req, res) => {
         const cfg = config.load();
 
         // Update config to use preset mode
-        cfg.usePresetMode = true;
         cfg.modelsPresetPath = presetPath;
         cfg.activePresetId = preset.id;
         config.save(cfg);
@@ -329,7 +366,6 @@ app.post('/api/presets/deactivate', (req, res) => {
         const cfg = config.load();
 
         // Disable preset mode
-        cfg.usePresetMode = false;
         cfg.modelsPresetPath = '';
         cfg.activePresetId = null;
         config.save(cfg);
@@ -340,18 +376,6 @@ app.post('/api/presets/deactivate', (req, res) => {
     }
 });
 
-// --- Live Props (POST /props on the llama-server) ---
-app.post('/api/props', async (req, res) => {
-    if (llama.status !== 'running') {
-        return res.status(400).json({ error: 'Server is not running' });
-    }
-    try {
-        const result = await llama.sendProps(req.body);
-        res.json({ ok: true, result });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
 
 // --- LoRA Adapters (proxy to llama-server) ---
 app.get('/api/lora-adapters', async (req, res) => {
@@ -393,7 +417,7 @@ app.get('/api/debug/metrics', async (req, res) => {
 
     // In router mode, /metrics requires ?model=
     let metricsUrl = `${baseUrl}/metrics`;
-    if (liveCfg.usePresetMode && liveCfg.activePresetId) {
+    if (liveCfg.activePresetId) {
         try {
             const preset = presets.getPreset(liveCfg.activePresetId);
             if (preset?.models?.length > 0) {
@@ -472,20 +496,38 @@ wss.on('connection', (ws) => {
 const cfg = config.load();
 const managerPort = cfg.managerPort || 7654;
 
-server.listen(managerPort, '127.0.0.1', () => {
-    console.log('');
-    console.log('  ╔═══════════════════════════════════════════════╗');
-    console.log('  ║          🦙 Llama Panel Manager               ║');
-    console.log('  ╠═══════════════════════════════════════════════╣');
-    console.log(`  ║  Dashboard: http://127.0.0.1:${managerPort}              ║`);
-    console.log('  ║  Press Ctrl+C to exit                         ║');
-    console.log('  ╚═══════════════════════════════════════════════╝');
-    console.log('');
+server.listen(managerPort, '0.0.0.0', () => {
+    const interfaces = os.networkInterfaces();
+    const networkIps = [];
+    for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name]) {
+            if (!iface.internal) {
+                networkIps.push({ address: iface.address, family: iface.family });
+            }
+        }
+    }
 
-    // Auto-open browser
-    const { exec } = require('child_process');
-    const startCmd = process.platform === 'win32' ? 'start' : process.platform === 'darwin' ? 'open' : 'xdg-open';
-    exec(`${startCmd} http://127.0.0.1:${managerPort}`);
+    const ipv4 = networkIps.find(ip => ip.family === 'IPv4' || ip.family === 4)?.address;
+    const ipv6 = networkIps.find(ip => ip.family === 'IPv6' || ip.family === 6)?.address;
+
+    console.log('\n\x1b[32m🦙 Llama Panel is running\x1b[0m');
+    console.log('─────────────────────────────────────────────────────────────────');
+    console.log('  \x1b[90mOn this machine -- open this in your browser:\x1b[0m');
+    console.log(`    \x1b[32mhttp://127.0.0.1:${managerPort}\x1b[0m`);
+    console.log(`    \x1b[90m(same as http://localhost:${managerPort})\x1b[0m`);
+
+    if (ipv4 || ipv6) {
+        console.log('\n  \x1b[90mFrom another device on your network / to share:\x1b[0m');
+        if (ipv4) console.log(`    \x1b[32mhttp://${ipv4}:${managerPort}\x1b[0m`);
+        if (ipv6) console.log(`    \x1b[32mhttp://[${ipv6}]:${managerPort}\x1b[0m`);
+    }
+
+    console.log('\n  \x1b[90mAPI & health:\x1b[0m');
+    console.log(`    \x1b[32mhttp://127.0.0.1:${managerPort}/api\x1b[0m`);
+    console.log(`    \x1b[32mhttp://127.0.0.1:${managerPort}/api/status\x1b[0m`);
+
+    console.log('─────────────────────────────────────────────────────────────────');
+    console.log(`  \x1b[90mTip: if you are on this computer, open\x1b[0m \x1b[32mhttp://localhost:${managerPort}/\x1b[0m \x1b[90min your browser.\x1b[0m\n`);
 });
 
 // Graceful shutdown

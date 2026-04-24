@@ -22,11 +22,11 @@ class LlamaManager {
         const args = [];
 
         // Check if preset mode is enabled
-        const isPresetMode = cfg.usePresetMode && cfg.modelsPresetPath && require('fs').existsSync(cfg.modelsPresetPath);
+        const isPresetMode = cfg.modelsPresetPath && require('fs').existsSync(cfg.modelsPresetPath);
 
         if (isPresetMode) {
             args.push('--models-preset', cfg.modelsPresetPath);
-            this.logs.push(`[Manager] Using preset mode: ${cfg.modelsPresetPath}`);
+            this._logManager(`Using preset mode: ${cfg.modelsPresetPath}`);
         } else if (cfg.modelPath) {
             args.push('-m', cfg.modelPath);
         }
@@ -56,15 +56,10 @@ class LlamaManager {
         } else {
             // In preset mode, warn if extraArgs might override preset values
             if (cfg.extraArgs && cfg.extraArgs.includes('-ngl')) {
-                this.logs.push('[Manager] Warning: extraArgs contains -ngl which may override preset values');
+                this._logManager('Warning: extraArgs contains -ngl which may override preset values');
             }
         }
 
-        // Parallel/slots work in both modes
-        if (cfg.parallel && cfg.parallel > 1) {
-            args.push('-np', String(cfg.parallel));
-            args.push('--models-max', String(cfg.parallel));
-        }
 
         // Pass metrics & slots — required for dashboard stats
         if (cfg.metrics !== false) { args.push('--metrics'); }
@@ -81,11 +76,6 @@ class LlamaManager {
         }
 
         // Advanced features
-        if (cfg.jinja) { args.push('--jinja'); }
-        if (cfg.enableProps) { args.push('--props'); }
-        if (cfg.sleepIdleSeconds && cfg.sleepIdleSeconds > 0) {
-            args.push('--sleep-idle-seconds', String(cfg.sleepIdleSeconds));
-        }
 
         // Extra args (user can override anything here)
         if (cfg.extraArgs) {
@@ -104,13 +94,10 @@ class LlamaManager {
         const cfg = config.load();
         this._currentConfig = cfg;
 
-        if (!cfg.modelPath && !cfg.usePresetMode) {
+        if (!cfg.modelPath && !cfg.modelsPresetPath) {
             this.logs.push('[Manager] No active model selected. Starting without a model.');
         }
 
-        if (cfg.usePresetMode && !cfg.modelsPresetPath) {
-            this.logs.push('[Manager] Warning: Preset mode is enabled but no preset path is set.');
-        }
 
         const args = this.buildArgs(cfg);
         this._serverArgs = args;
@@ -119,7 +106,7 @@ class LlamaManager {
         this.lastError = null;
         this.startTime = Date.now();
 
-        this.logs.push(`[Manager] Starting llama-server with args: ${args.join(' ')}`);
+        this._logManager(`Starting llama-server with args: ${args.join(' ')}`);
 
         try {
             this.process = spawn('llama-server', args, {
@@ -137,6 +124,7 @@ class LlamaManager {
             const lines = data.toString().split('\n').filter(l => l.trim());
             for (const line of lines) {
                 this.logs.push(line);
+                console.log(line);
             }
         });
 
@@ -144,11 +132,12 @@ class LlamaManager {
             const lines = data.toString().split('\n').filter(l => l.trim());
             for (const line of lines) {
                 this.logs.push(line);
+                console.error(line);
                 // Detect when server is ready (legacy fallback)
                 if (line.includes('server is listening on')) {
                     if (this.status === 'starting') {
                         this.status = 'running';
-                        this.logs.push('[Manager] Server is ready (detected via logs)');
+                        this._logManager('Server is ready (detected via logs)');
                     }
                 }
             }
@@ -159,7 +148,7 @@ class LlamaManager {
         this.process.on('error', (err) => {
             this.status = 'error';
             this.lastError = err.message;
-            this.logs.push(`[Manager] Process error: ${err.message}`);
+            this._logManager(`Process error: ${err.message}`, true);
             this._stopHealthPolling();
             this.process = null;
         });
@@ -169,7 +158,7 @@ class LlamaManager {
                 this.status = code === 0 ? 'stopped' : 'error';
                 if (code !== 0) this.lastError = `Process exited with code ${code}`;
             }
-            this.logs.push(`[Manager] Process exited (code: ${code}, signal: ${signal})`);
+            this._logManager(`Process exited (code: ${code}, signal: ${signal})`);
             this._stopHealthPolling();
             this.process = null;
         });
@@ -193,7 +182,7 @@ class LlamaManager {
         }
         this.status = 'stopped';
         this._stopHealthPolling();
-        this.logs.push('[Manager] Stopping server...');
+        this._logManager('Stopping server...');
 
         return new Promise((resolve) => {
             const timeout = setTimeout(() => {
@@ -237,7 +226,7 @@ class LlamaManager {
 
         // In router mode, get the first model identifier from active preset
         let modelIdentifier = null;
-        if (cfg.usePresetMode && cfg.activePresetId) {
+        if (cfg.activePresetId) {
             try {
                 const presetManager = new PresetManager();
                 const preset = presetManager.getPreset(cfg.activePresetId);
@@ -353,23 +342,6 @@ class LlamaManager {
         this.propsData = null;
     }
 
-    /**
-     * Live-inject a new system prompt via POST /props (requires --props flag)
-     */
-    async sendProps(payload) {
-        const cfg = this._currentConfig || {};
-        const baseUrl = `http://${cfg.host || '127.0.0.1'}:${cfg.port || 8080}`;
-        const res = await fetch(`${baseUrl}/props`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-        });
-        if (!res.ok) {
-            const text = await res.text();
-            throw new Error(`/props returned ${res.status}: ${text}`);
-        }
-        return res.json();
-    }
 
     _buildEffectiveArgsForModel(model) {
         const args = [];
@@ -483,7 +455,7 @@ class LlamaManager {
         }
 
         // In single-model mode expose the raw CLI args as-is
-        if (this._serverArgs && !this._currentConfig?.usePresetMode) {
+        if (this._serverArgs && !this._currentConfig?.modelsPresetPath) {
             result.serverArgs = this._serverArgs.join(' ');
         }
 
@@ -498,7 +470,7 @@ class LlamaManager {
         }
 
         // Add active preset info and expanded per-model effective args
-        if (this._currentConfig?.usePresetMode && this._currentConfig?.activePresetId) {
+        if (this._currentConfig?.activePresetId) {
             try {
                 const presetManager = new PresetManager();
                 const preset = presetManager.getPreset(this._currentConfig.activePresetId);
@@ -517,6 +489,16 @@ class LlamaManager {
         }
 
         return result;
+    }
+
+    _logManager(text, isError = false) {
+        const msg = `[Manager] ${text}`;
+        this.logs.push(msg);
+        if (isError) {
+            console.error(`\x1b[31m${msg}\x1b[0m`);
+        } else {
+            console.log(`\x1b[36m${msg}\x1b[0m`);
+        }
     }
 }
 
